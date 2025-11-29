@@ -1,0 +1,65 @@
+url,source_name,source_type,tier,category,priority,notes
+https://www.breastcancer.org/research-news,Breastcancer.org,scrape,1,patient-advocacy,9,Patient-focused research news with expert insights
+https://www.breastcancer.org/research-news/feed,Breastcancer.org RSS,rss,1,patient-advocacy,9,RSS feed for faster access
+https://www.bcrf.org/blog/bcrf-news/,BCRF,scrape,1,research-foundation,9,Breast Cancer Research Foundation - funding announcements
+https://dailynews.ascopubs.org/,ASCO Daily News,scrape,1,professional-org,10,Official ASCO news - most authoritative
+https://www.asco.org/news-initiatives/current-news,ASCO News,scrape,1,professional-org,10,American Society of Clinical Oncology main news
+https://www.onclive.com/news,OncLive,scrape,1,medical-news,9,Comprehensive oncology news and expert commentary
+https://www.onclive.com/rss/all.xml,OncLive RSS,rss,1,medical-news,9,RSS feed for OncLive
+https://clinicaltrials.gov/api/v2/studies,ClinicalTrials.gov,api,1,trials,10,Official US clinical trials registry - structured data
+https://www.fda.gov/drugs/resources-information-approved-drugs,FDA Drug Approvals,scrape,1,regulatory,10,Official FDA drug approval announcements
+https://www.fda.gov/news-events/fda-newsroom/press-announcements,FDA Press Releases,scrape,1,regulatory,10,FDA press announcements including oncology
+https://www.cancer.gov/news-events/cancer-currents-blog,NCI Cancer Currents,scrape,1,government,9,National Cancer Institute research blog
+https://www.cancer.gov/about-nci/organization/ccct/news,NCI Clinical Trials,scrape,1,government,9,NCI clinical trial news and updates
+https://www.susanglkomen.org/breast-cancer/research/,Susan G. Komen,scrape,1,patient-advocacy,8,Large patient advocacy organization research section
+https://www.nationalbreastcancer.org/breast-cancer-research,NBCF,scrape,1,patient-advocacy,8,National Breast Cancer Foundation research updates
+https://www.cancer.org/cancer/types/breast-cancer/about/whats-new-in-breast-cancer-research.html,American Cancer Society,scrape,1,patient-advocacy,8,ACS breast cancer research updates
+https://www.breastcancerresearchfoundation.org/news-and-blog/,BCRF News,scrape,1,research-foundation,8,Research funding and breakthrough announcements
+https://www.metavivor.org/research-news/,METAvivor,scrape,1,patient-advocacy,8,Metastatic breast cancer focused research news
+https://conferences.asco.org/am/attend/abstracts,ASCO Annual Meeting,scrape,1,conference,10,ASCO Annual Meeting abstracts - breaking research
+https://www.sabcs.org/Press-Releases,SABCS,scrape,1,conference,10,San Antonio Breast Cancer Symposium - major announcements
+https://www.esmo.org/newsroom/press-releases,ESMO,scrape,1,conference,9,European Society for Medical Oncology press releases
+https://www.esmo.org/meetings/esmo-congress,ESMO Congress,scrape,1,conference,9,ESMO Congress abstracts and news
+https://www.aacr.org/about-the-aacr/newsroom/news-releases/,AACR,scrape,1,conference,9,American Association for Cancer Research news
+https://www.sitcancer.org/aboutsitc/press-releases,SITC,scrape,1,professional-org,8,Society for Immunotherapy of Cancer press releases
+https://www.nccn.org/news/default.aspx,NCCN,scrape,1,professional-org,8,National Comprehensive Cancer Network guidelines updates
+https://www.medpagetoday.com/hematologyoncology/breastcancer,MedPage Today,scrape,2,medical-news,8,Clinical news for healthcare professionals
+https://www.targetedonc.com/news,Targeted Oncology,scrape,2,medical-news,8,Targeted therapy and precision medicine focus
+https://www.cancernetwork.com/news,Cancer Network,scrape,2,medical-news,8,Comprehensive cancer news and case studies
+https://www.cancernetwork.com/rss.xml,Cancer Network RSS,rss,2,medical-news,8,RSS feed for faster access
+https://www.oncologynurseadvisor.com/news/,Oncology Nurse Advisor,scrape,2,medical-news,7,Clinical updates for oncology nurses
+https://www.healio.com/news/hematology-oncology,Healio Oncology,scrape,2,medical-news,8,Peer-reviewed oncology news
+https://www.healio.com/rss/hematology-oncology.xml,Healio RSS,rss,2,medical-news,8,RSS feed for Healio
+https://www.medscape.com/oncology,Medscape Oncology,scrape,2,medical-news,7,CME-linked oncology news
+https://www.fiercebiotech.com/special-reports/oncology,FierceBiotech Oncology,scrape,2,biotech-news,8,Biotech industry oncology focus
+https://www.fiercebiotech.com/rss/xml,FierceBiotech RSS,rss,2,biotech-news,9,Fast-updating biotech news feed
+https://www.biopharmadive.com/topic/oncology/,BioPharma Dive,scrape,2,pharma-news,8,Deep pharma industry analysis
+https://www.biopharmadive.com/feeds/news/,BioPharma Dive RSS,rss,2,pharma-news,9,RSS feed with industry insights
+https://endpointsnews.com/biopharma/,Endpoints News,scrape,2,pharma-news,8,Biotech news and analysis
+https://www.biospace.com/therapeutic-area/oncology,BioSpace,scrape,2,biotech-news,7,Biotech news and job listings
+https://www.pharmaceutical-technology.com/news/,Pharma Technology,scrape,2,pharma-news,7,Drug development technology news
+https://medicalxpress.com/rss-feed/breaking/oncology-cancer/,Medical Xpress,rss,2,science-news,7,Science news aggregator - quick updates
+https://www.medrxiv.org/collection/oncology,medRxiv,api,1,preprints,8,Preprint server - early research results
+https://www.biorxiv.org/collection/oncology,bioRxiv,api,1,preprints,8,Biology preprints - early discoveries
+https://www.thelancet.com/journals/lanonc/onlineFirst,Lancet Oncology,scrape,1,journal,9,Top-tier oncology journal
+https://www.nejm.org/medical-articles/oncology,NEJM Oncology,scrape,1,journal,10,New England Journal of Medicine oncology
+https://ascopubs.org/journal/jco,JCO,scrape,1,journal,10,Journal of Clinical Oncology
+https://aacrjournals.org/cancerres,Cancer Research,scrape,1,journal,9,AACR journal - cancer research
+https://www.nature.com/subjects/breast-cancer/nrc,Nature Cancer,scrape,1,journal,9,Nature journal breast cancer section
+https://www.gene.com/media/press-releases,Genentech,scrape,3,pharma-newsroom,6,Genentech/Roche - Herceptin Enhertu Perjeta maker
+https://www.novartis.com/news/media-releases,Novartis,scrape,3,pharma-newsroom,6,Kisqali maker
+https://www.pfizer.com/news,Pfizer,scrape,3,pharma-newsroom,6,Ibrance maker
+https://www.lilly.com/news,Eli Lilly,scrape,3,pharma-newsroom,6,Verzenio maker
+https://www.astrazeneca.com/media-centre/press-releases.html,AstraZeneca,scrape,3,pharma-newsroom,6,Enhertu co-developer Lynparza maker
+https://www.merck.com/news/,Merck,scrape,3,pharma-newsroom,6,Keytruda maker
+https://www.gilead.com/news-and-press,Gilead,scrape,3,pharma-newsroom,5,Trodelvy maker
+https://www.daiichisankyo.com/media/,Daiichi Sankyo,scrape,3,pharma-newsroom,6,Enhertu co-developer
+https://www.seagen.com/news-publications/press-releases,Seagen,scrape,3,pharma-newsroom,6,Antibody-drug conjugate specialist
+https://www.eisai.com/news/news.html,Eisai,scrape,3,pharma-newsroom,5,Lenvima co-developer
+https://www.abbvie.com/newsroom.html,AbbVie,scrape,3,pharma-newsroom,5,Oncology pipeline
+https://www.bms.com/media-center/press-releases.html,Bristol Myers Squibb,scrape,3,pharma-newsroom,6,Opdivo maker
+https://www.gsk.com/en-gb/media/press-releases/,GSK,scrape,3,pharma-newsroom,5,Zejula maker
+https://www.takeda.com/newsroom/,Takeda,scrape,3,pharma-newsroom,5,Oncology portfolio
+https://investors.immunogen.com/news-releases,ImmunoGen,scrape,3,pharma-newsroom,6,ADC technology pioneer
+https://www.regeneron.com/news-releases,Regeneron,scrape,3,pharma-newsroom,5,Cancer immunotherapy
+https://news.amgen.com/press-releases,Amgen,scrape,3,pharma-newsroom,5,Lumakras Blincyto maker
