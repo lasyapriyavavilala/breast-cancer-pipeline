@@ -52,7 +52,7 @@ class IntegratedPipelineRunner:
     
     def __init__(
         self,
-        base_dir: str = "C:/Sem4V1/mslworkingv1",
+        base_dir: str = None,  # ← Changed from hardcoded path
         target_articles: int = 50,
         days_back: int = 90,
         polls_per_article: int = 3,
@@ -60,6 +60,11 @@ class IntegratedPipelineRunner:
         post_limit: Optional[int] = None,
         dry_run: bool = True
     ):
+        # Use current working directory if not specified (works on Windows & Linux)
+        if base_dir is None:
+            import os
+            base_dir = os.getcwd()
+        
         self.base_dir = Path(base_dir)
         self.target_articles = target_articles
         self.days_back = days_back
@@ -103,23 +108,33 @@ class IntegratedPipelineRunner:
         if StandaloneScraper is None:
             raise ImportError("StandaloneScraper not found. Please ensure standalone_scraper.py is in the current directory.")
         
-        #urls_csv = self.base_dir / "pharma_urls.csv"
-        #keywords_csv = self.base_dir / "keywords.csv"
         # Try data directory first, then fall back to base directory
         urls_csv = self.data_dir / "pharma_urls.csv"
         keywords_csv = self.data_dir / "keywords.csv"
-
+        
+        logger.info(f"🔍 Looking for CSV files...")
+        logger.info(f"   Trying data directory: {self.data_dir}")
+        logger.info(f"   Base directory: {self.base_dir}")
+        
         # If files don't exist in data/, check base directory
         if not urls_csv.exists():
+            logger.info(f"   URLs not found in data/, checking base directory...")
             urls_csv = self.base_dir / "pharma_urls.csv"
         if not keywords_csv.exists():
+            logger.info(f"   Keywords not found in data/, checking base directory...")
             keywords_csv = self.base_dir / "keywords.csv"
         
         # Validate CSV files exist
         if not urls_csv.exists():
-            raise FileNotFoundError(f"Missing {urls_csv}. Please create this file with columns: source_name,source_type,url,priority")
+            raise FileNotFoundError(
+                f"Missing {urls_csv}. Please create this file with columns: source_name,source_type,url,priority. "
+                f"Searched in: {self.data_dir} and {self.base_dir}"
+            )
         if not keywords_csv.exists():
-            raise FileNotFoundError(f"Missing {keywords_csv}. Please create this file with column: keyword")
+            raise FileNotFoundError(
+                f"Missing {keywords_csv}. Please create this file with column: keyword. "
+                f"Searched in: {self.data_dir} and {self.base_dir}"
+            )
         
         logger.info(f"📂 Loading configuration:")
         logger.info(f"   URLs: {urls_csv}")
