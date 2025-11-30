@@ -1,11 +1,8 @@
-name: Weekly Breast Cancer News Pipeline
+name: Weekly Breast Cancer News Pipeline - TEST
 
 on:
-  # Cron schedule: Every Sunday at 9 AM UTC (4 AM EST)
   schedule:
     - cron: '0 9 * * 0'
-  
-  # Also allow manual trigger
   workflow_dispatch:
 
 jobs:
@@ -34,7 +31,6 @@ jobs:
       
       - name: Install ChromeDriver
         run: |
-          # ChromeDriver is automatically installed by setup-chrome action
           which chromedriver
           chromedriver --version
       
@@ -42,7 +38,6 @@ jobs:
         run: |
           mkdir -p data/raw data/processed data/outputs data/embeddings logs
       
-      # ← ADD THIS STEP (NEW!)
       - name: Copy CSV files to data directory
         run: |
           echo "Copying CSV files..."
@@ -51,7 +46,7 @@ jobs:
           echo "Verifying files:"
           ls -lh data/*.csv
       
-      - name: Run pipeline
+      - name: Run pipeline (TEST MODE - 10 articles, 2 polls each)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
@@ -61,40 +56,66 @@ jobs:
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
         run: |
           python run_pipeline.py \
-            --target 100 \
+            --target 10 \
             --days-back 7 \
-            --polls-per-article 3 \
+            --polls-per-article 2 \
             --post-polls \
-            --post-limit 20 \
+            --post-limit 5 \
             --no-dry-run \
             2>&1 | tee logs/pipeline_$(date +%Y%m%d_%H%M%S).log
       
-      - name: Upload logs
+      # ===== UPLOAD AGENT 1 OUTPUT =====
+      - name: Upload Agent 1 - Scraped Articles
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-logs-${{ github.run_number }}
-          path: logs/*.log
+          name: 01-agent1-scraped-articles
+          path: data/raw/scraped_articles_*.json
           retention-days: 30
       
-      - name: Upload outputs
-        if: success()
+      # ===== UPLOAD AGENT 2 OUTPUT =====
+      - name: Upload Agent 2 - Enhanced Articles (with entities)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-outputs-${{ github.run_number }}
+          name: 02-agent2-enhanced-articles
           path: |
-            data/outputs/*.json
-            data/processed/*.json
+            data/processed/enhanced_articles.json
+            data/processed/enhanced_articles.ndjson
           retention-days: 30
       
-      - name: Notify on failure
-        if: failure()
-        uses: actions/github-script@v7
+      # ===== UPLOAD AGENT 3 OUTPUT =====
+      - name: Upload Agent 3 - Categorized Articles
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🚨 Pipeline Failed - ' + new Date().toISOString(),
-              body: 'The weekly pipeline failed. Check the [workflow run](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') for details.'
-            })
+          name: 03-agent3-categorized-articles
+          path: data/processed/categorized_articles.json
+          retention-days: 30
+      
+      # ===== UPLOAD AGENT 4 OUTPUT =====
+      - name: Upload Agent 4 - Generated Polls
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 04-agent4-generated-polls
+          path: data/outputs/twitter_polls.json
+          retention-days: 30
+      
+      # ===== UPLOAD AGENT 5 OUTPUT =====
+      - name: Upload Agent 5 - Database (posted polls tracker)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 05-agent5-database
+          path: data/pharma_news.db
+          retention-days: 30
+      
+      # ===== UPLOAD ALL LOGS =====
+      - name: Upload Complete Pipeline Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-complete-logs
+          path: logs/*.log
+          retention-days: 30
