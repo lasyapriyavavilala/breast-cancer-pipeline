@@ -1,0 +1,91 @@
+name: Weekly Breast Cancer News Pipeline
+
+on:
+  # Cron schedule: Every Sunday at 9 AM UTC (4 AM EST)
+  schedule:
+    - cron: '0 9 * * 0'
+  
+  # Also allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Setup Chrome and ChromeDriver
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+      
+      - name: Install ChromeDriver
+        run: |
+          # ChromeDriver is automatically installed by setup-chrome action
+          which chromedriver
+          chromedriver --version
+      
+      - name: Create directories
+        run: |
+          mkdir -p data/raw data/processed data/outputs data/embeddings logs
+      
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
+          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
+        run: |
+          python run_pipeline.py \
+            --target 100 \
+            --days-back 7 \
+            --polls-per-article 3 \
+            --post-polls \
+            --post-limit 20 \
+            --no-dry-run \
+            2>&1 | tee logs/pipeline_$(date +%Y%m%d_%H%M%S).log
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_number }}
+          path: logs/*.log
+          retention-days: 30
+      
+      - name: Upload outputs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-outputs-${{ github.run_number }}
+          path: |
+            data/outputs/*.json
+            data/processed/*.json
+          retention-days: 30
+      
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Pipeline Failed - ' + new Date().toISOString(),
+              body: 'The weekly pipeline failed. Check the [workflow run](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') for details.'
+            })
