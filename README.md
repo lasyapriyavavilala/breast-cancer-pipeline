@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Mslworkingv1 Crew
 
 Welcome to the Mslworkingv1 Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
@@ -52,3 +53,6 @@ For support, questions, or feedback regarding the Mslworkingv1 Crew or crewAI.
 - [Chat with our docs](https://chatg.pt/DWjSBZn)
 
 Let's create wonders together with the power and simplicity of crewAI.
+=======
+# breast-cancer-pipeline
+>>>>>>> 7a76bab45ba45efdf7a8a28af3ff127df9aaf7bf
