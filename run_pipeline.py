@@ -105,8 +105,15 @@ class IntegratedPipelineRunner:
         
         #urls_csv = self.base_dir / "pharma_urls.csv"
         #keywords_csv = self.base_dir / "keywords.csv"
+        # Try data directory first, then fall back to base directory
         urls_csv = self.data_dir / "pharma_urls.csv"
         keywords_csv = self.data_dir / "keywords.csv"
+
+        # If files don't exist in data/, check base directory
+        if not urls_csv.exists():
+            urls_csv = self.base_dir / "pharma_urls.csv"
+        if not keywords_csv.exists():
+            keywords_csv = self.base_dir / "keywords.csv"
         
         # Validate CSV files exist
         if not urls_csv.exists():
