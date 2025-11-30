@@ -42,6 +42,15 @@ jobs:
         run: |
           mkdir -p data/raw data/processed data/outputs data/embeddings logs
       
+      # ← ADD THIS STEP (NEW!)
+      - name: Copy CSV files to data directory
+        run: |
+          echo "Copying CSV files..."
+          cp pharma_urls.csv data/pharma_urls.csv
+          cp keywords.csv data/keywords.csv
+          echo "Verifying files:"
+          ls -lh data/*.csv
+      
       - name: Run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
