@@ -512,18 +512,41 @@ class StandaloneScraper:
     # ==================== FILTERING ====================
     
     def _filter_articles(self, articles: List[Dict]) -> List[Dict]:
-        """Filter articles by keywords and date"""
+        """Filter articles by keywords and date - with junk detection"""
         filtered = []
+        
+        # Junk page indicators
+        junk_indicators = [
+            'cookie policy', 'privacy policy', 'about us', 'careers at',
+            'terms of use', 'all rights reserved', 'sign in', 'log in',
+            'verify you are human', 'cloudflare', 'just a moment',
+            'search icon', 'filter icon', 'consent preferences'
+        ]
         
         for article in articles:
             # Check content length
             content = article.get('content', '')
-            if len(content) < 100:
+            title = article.get('title', '')
+            
+            if len(content) < 200:  # Increased from 100
                 continue
             
-            # Check keywords
-            text = (article.get('title', '') + ' ' + content).lower()
-            if not any(kw in text for kw in self.keywords):
+            # Check for junk pages
+            text_lower = (title + ' ' + content).lower()
+            if any(junk in text_lower for junk in junk_indicators):
+                continue
+            
+            # Check keywords (must have at least ONE)
+            if not any(kw in text_lower for kw in self.keywords):
+                continue
+            
+            # Additional check: title should contain keywords OR be news-like
+            title_lower = title.lower()
+            news_indicators = ['fda', 'approval', 'trial', 'study', 'data', 'results', 'shows', 'announces']
+            has_keyword_in_title = any(kw in title_lower for kw in self.keywords)
+            has_news_indicator = any(ind in title_lower for ind in news_indicators)
+            
+            if not (has_keyword_in_title or has_news_indicator):
                 continue
             
             # Check date
@@ -539,7 +562,7 @@ class StandaloneScraper:
             filtered.append(article)
         
         return filtered
-    
+        
     # ==================== SAVE RESULTS ====================
     
     def save(self, filename: Optional[str] = None) -> str:
