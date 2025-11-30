@@ -483,8 +483,8 @@ Examples:
     )
     
     # Core options
-    parser.add_argument("--base-dir", default="C:/Sem4V1/mslworkingv1",
-                        help="Base directory for all data (default: C:/Sem4V1/mslworkingv1)")
+    parser.add_argument("--base-dir", default=None,
+                    help="Base directory for all data (default: current directory)")
     parser.add_argument("--target", type=int, default=50,
                         help="Number of articles to scrape (default: 50)")
     parser.add_argument("--days-back", type=int, default=90,
