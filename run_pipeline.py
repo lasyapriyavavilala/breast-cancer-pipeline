@@ -41,10 +41,10 @@ except ImportError:
     PollGenerator = None
 
 try:
-    from agents.agent5_publisher import UnifiedTwitterPublisher
+    from agents.agent5_publisher import TwitterPollPublisher
 except ImportError:
     logger.warning("agent5_publisher.py not found in current directory")
-    UnifiedTwitterPublisher = None
+    TwitterPollPublisher = None
 
 
 class IntegratedPipelineRunner:
@@ -58,6 +58,7 @@ class IntegratedPipelineRunner:
         polls_per_article: int = 3,
         post_polls: bool = False,
         post_limit: Optional[int] = None,
+        post_interval: int = 3,
         dry_run: bool = True
     ):
         # Use current working directory if not specified (works on Windows & Linux)
@@ -71,6 +72,7 @@ class IntegratedPipelineRunner:
         self.polls_per_article = polls_per_article
         self.post_polls = post_polls
         self.post_limit = post_limit
+        self.post_interval = post_interval
         self.dry_run = dry_run
         
         # Setup directory structure
@@ -307,73 +309,54 @@ class IntegratedPipelineRunner:
         
         return self.polls_file
     
-    def run_agent5_publisher(self):
-        """Agent 5: Twitter/X Publisher"""
+    def run_agent5_publisher(self) -> Dict:
+        """Agent 5: Twitter/X Publisher with Native Polls"""
         logger.info("\n" + "="*70)
         logger.info("AGENT 5: TWITTER/X PUBLISHER")
         logger.info("="*70)
         
-        if UnifiedTwitterPublisher is None:
-            raise ImportError("UnifiedTwitterPublisher not found. Please ensure agent5_publisher.py is in the current directory.")
+        if TwitterPollPublisher is None:
+            raise ImportError("TwitterPollPublisher not found. Please ensure agent5_publisher.py is in the agents directory.")
         
         if not self.post_polls:
             logger.info("⏭️  Skipping Agent 5 (posting disabled)")
             logger.info("💡 Use --post-polls flag to enable Twitter/X posting")
-            return
+            return {"posted": 0, "skipped": 0, "failed": 0, "total": 0}
         
         if not self.polls_file:
             raise ValueError("Agent 4 must run first. No polls file found.")
         
-        # Initialize publisher
-        logger.info(f"📤 Initializing Twitter/X publisher (dry_run={self.dry_run})")
-        publisher = UnifiedTwitterPublisher(
-            dry_run=self.dry_run,
+        logger.info(f"📤 Initializing Twitter publisher (dry_run={self.dry_run})")
+        
+        # Initialize publisher with correct class name
+        publisher = TwitterPollPublisher(
             db_path=str(self.data_dir / "pharma_news.db"),
-            post_interval_minutes=60,
+            dry_run=self.dry_run,
+            post_interval_minutes=15,  # 15 minutes between posts
             max_posts_per_day=20
         )
         
         # Load polls
         logger.info(f"📂 Loading polls from {self.polls_file}")
-        with open(self.polls_file, "r", encoding="utf-8") as f:
+        with open(self.polls_file, 'r', encoding='utf-8') as f:
             polls = json.load(f)
         
         logger.info(f"📊 Total polls available: {len(polls)}")
         
-        # Convert polls to publishable format
-        publishable_polls = []
-        for poll in polls:
-            # Reconstruct poll text
-            question = poll.get("question", "")
-            options = poll.get("options", [])
-            poll_text = f"Q: {question}\n" + "\n".join([f"- {opt}" for opt in options])
-            
-            publishable_polls.append({
-                "question": poll_text,
-                "article_url": poll.get("article_url", ""),
-                "article_headline": poll.get("article_headline", ""),
-                "category": poll.get("category", ""),
-                "grounding_score": poll.get("grounding_score", {}).get("overall", 0.0)
-            })
-        
-        # Limit if specified
+        # Apply limit
         if self.post_limit:
-            publishable_polls = publishable_polls[:self.post_limit]
             logger.info(f"📊 Limiting to {self.post_limit} polls")
         
-        # Publish
-        logger.info(f"🚀 Publishing {len(publishable_polls)} polls...")
+        # Publish (polls are already in correct format from Agent 4)
+        logger.info(f"🚀 Publishing polls...")
         summary = publisher.publish_batch(
-            publishable_polls,
-            content_type="question",
+            polls,
+            limit=self.post_limit,
             respect_rate_limits=True
         )
         
-        logger.success(f"✅ Agent 5 complete")
-        logger.info(f"📊 Posted: {summary['posted']}/{summary['total']}")
-        logger.info(f"⏭️  Skipped: {summary['skipped']}")
-        if summary.get('failed', 0) > 0:
-            logger.warning(f"❌ Failed: {summary['failed']}")
+        logger.success(f"✅ Agent 5 complete: {summary['posted']} polls posted")
+        return summary
     
     def print_summary(self):
         """Print pipeline execution summary"""
@@ -497,6 +480,8 @@ Examples:
                         help="Post polls to Twitter/X")
     parser.add_argument("--post-limit", type=int,
                         help="Limit number of polls to post")
+    parser.add_argument("--post-interval", type=int, default=3,
+                    help="Minutes between posts (default: 3)")
     parser.add_argument("--dry-run", action="store_true", default=True,
                         help="Dry run mode (default: True)")
     parser.add_argument("--no-dry-run", action="store_false", dest="dry_run",
@@ -524,6 +509,7 @@ Examples:
         polls_per_article=args.polls_per_article,
         post_polls=args.post_polls and not args.skip_agent5,
         post_limit=args.post_limit,
+        post_interval=args.post_interval,
         dry_run=args.dry_run
     )
     
