@@ -273,15 +273,19 @@ class TwitterPollPublisher:
             tweet1_id = response1.data['id']
             logger.info(f"✓ Posted tweet 1 (URL + company) - ID: {tweet1_id}")
             
-            # ===== TWEET 2: Summary/Headline (reply to tweet 1) =====
-            summary = self._safe_trim(headline, 275)
-            
+            # ===== TWEET 2: Summary (280 chars from Agent 2) =====
+            # Use summary_280 from Agent 2, fallback to headline if not available
+            summary = poll_data.get('article_summary', '')  # ← GET SUMMARY
+            tweet2_text = summary if summary else headline
+            tweet2_text = self._safe_trim(tweet2_text, 275)
+
             response2 = self.client.create_tweet(
-                text=summary,
+                text=tweet2_text,
                 in_reply_to_tweet_id=tweet1_id
             )
             tweet2_id = response2.data['id']
             logger.info(f"✓ Posted tweet 2 (summary) - ID: {tweet2_id}")
+            logger.info(f"  Summary: {tweet2_text[:100]}...")  # ← LOG SUMMARY
             
             # ===== TWEET 3: Native Poll (reply to tweet 2) =====
             poll_response = self.client.create_tweet(

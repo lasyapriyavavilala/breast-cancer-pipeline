@@ -575,6 +575,7 @@ Q: <HCP-perspective question that strictly reflects article content>
                 "options": options,
                 "article_url": url,
                 "article_headline": headline,
+                "article_summary": article.get("summary_280", ""),  # ← ADD THIS LINE
                 "category": category,
                 "char_count": len(poll),
                 "poll_type": "awareness" if i == 1 else self._bucket(question),
@@ -584,7 +585,7 @@ Q: <HCP-perspective question that strictly reflects article content>
                     "needs_review": needs_review
                 }
             }
-            
+
             poll_dicts.append(poll_dict)
             grounding_scores.append(scores)
         
