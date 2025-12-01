@@ -332,7 +332,7 @@ class IntegratedPipelineRunner:
         publisher = TwitterPollPublisher(
             db_path=str(self.data_dir / "pharma_news.db"),
             dry_run=self.dry_run,
-            post_interval_minutes=15,  # 15 minutes between posts
+            post_interval_minutes=3,  # 15 minutes between posts
             max_posts_per_day=20
         )
         
