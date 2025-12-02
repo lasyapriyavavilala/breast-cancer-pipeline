@@ -1,9 +1,12 @@
 keyword
 breast cancer
+breast carcinoma
+mammary cancer
 her2
 her2+
 her2-positive
 her2-negative
+her2-low
 triple negative
 tnbc
 hr+
@@ -13,71 +16,43 @@ er-
 pr+
 pr-
 metastatic breast cancer
+metastatic breast
 early breast cancer
 stage 4 breast cancer
-luminal
-basal-like
-enhertu
-kadcyla
-herceptin
-perjeta
-phesgo
-verzenio
-ibrance
-kisqali
-trodelvy
-lynparza
-keytruda
-opdivo
-tecentriq
-imfinzi
-destiny-breast
-monarche
-natalee
-asco
-sabcs
-fda approval
-clinical trial
-phase 3
-phase 2
-antibody-drug conjugate
-adc
-cdk4/6 inhibitor
-parp inhibitor
-immune checkpoint
-neoadjuvant
-adjuvant
-overall survival
-progression-free survival
-pathologic complete response
-pcr
+advanced breast cancer
+luminal breast
+basal-like breast
+antibody-drug conjugate breast
+adc breast
+cdk4/6 inhibitor breast
+parp inhibitor breast
+immune checkpoint breast
+neoadjuvant breast
+adjuvant breast
+breast cancer screening
+breast cancer trial
+breast tumor
+breast tumour
+mammary tumor
+mammary tumour
 brca1
 brca2
 brca mutation
-pi3k
-akt
-mtor
-alpelisib
-capivasertib
-sacituzumab
-trastuzumab deruxtecan
-abemaciclib
-palbociclib
-ribociclib
-olaparib
-talazoparib
-pembrolizumab
-nivolumab
-atezolizumab
-durvalumab
-breast cancer screening
+pi3k breast
+mtor breast
+asco breast
+sabcs
+fda approval breast
+clinical trial breast
+phase 3 breast
+phase 2 breast
+overall survival breast
+progression-free survival breast
+pathologic complete response breast
+pcr breast
+precision medicine breast
+targeted therapy breast
+immunotherapy breast
+genetic testing breast
 mammography
-genetic testing
-precision medicine
-targeted therapy
-immunotherapy
-chemotherapy
-radiation therapy
-surgical oncology
-oncotype dx
-mammaprint
+surgical oncology breast
