@@ -15,35 +15,35 @@ from typing import Optional, List, Dict
 from loguru import logger
 from dotenv import load_dotenv
 
-# Import all agent classes
+# FIXED: Import from agents folder with correct filename
 try:
     from agents.agent1_scraper import StandaloneScraper
 except ImportError:
-    logger.warning("standalone_scraper.py not found in current directory")
+    logger.warning("standalone_scraper_fixed.py not found in agents directory")
     StandaloneScraper = None
 
 try:
     from agents.agent2_summarizer import ArticleExtractor
 except ImportError:
-    logger.warning("agent2_entity_extraction.py not found in current directory")
+    logger.warning("agent2_summarizer.py not found in agents directory")
     ArticleExtractor = None
 
 try:
     from agents.agent3_categorizer import ArticleCategorizer
 except ImportError:
-    logger.warning("agent3_categorizer.py not found in current directory")
+    logger.warning("agent3_categorizer.py not found in agents directory")
     ArticleCategorizer = None
 
 try:
     from agents.agent4_question_gen import PollGenerator
 except ImportError:
-    logger.warning("agent4_poll_generator.py not found in current directory")
+    logger.warning("agent4_question_gen.py not found in agents directory")
     PollGenerator = None
 
 try:
     from agents.agent5_publisher import TwitterPollPublisher
 except ImportError:
-    logger.warning("agent5_publisher.py not found in current directory")
+    logger.warning("agent5_publisher.py not found in agents directory")
     TwitterPollPublisher = None
 
 
@@ -52,9 +52,9 @@ class IntegratedPipelineRunner:
     
     def __init__(
         self,
-        base_dir: str = None,  # ← Changed from hardcoded path
+        base_dir: str = None,
         target_articles: int = 50,
-        days_back: int = 90,
+        days_back: int = 7,  # FIXED: Changed default from 90 to 7
         polls_per_article: int = 3,
         post_polls: bool = False,
         post_limit: Optional[int] = None,
@@ -108,28 +108,28 @@ class IntegratedPipelineRunner:
         logger.info("="*70)
         
         if StandaloneScraper is None:
-            raise ImportError("StandaloneScraper not found. Please ensure standalone_scraper.py is in the current directory.")
+            raise ImportError("StandaloneScraper not found. Please ensure standalone_scraper_fixed.py is in the agents directory.")
         
-        # Try data directory first, then fall back to base directory
+        # FIXED: Look for CSV files in multiple locations
+        # Priority: data/ → root directory
         urls_csv = self.data_dir / "pharma_urls.csv"
         keywords_csv = self.data_dir / "keywords.csv"
         
         logger.info(f"🔍 Looking for CSV files...")
-        logger.info(f"   Trying data directory: {self.data_dir}")
-        logger.info(f"   Base directory: {self.base_dir}")
+        logger.info(f"   Checking data directory: {self.data_dir}")
         
-        # If files don't exist in data/, check base directory
+        # If files don't exist in data/, check root directory
         if not urls_csv.exists():
-            logger.info(f"   URLs not found in data/, checking base directory...")
+            logger.info(f"   URLs not found in data/, checking root directory...")
             urls_csv = self.base_dir / "pharma_urls.csv"
         if not keywords_csv.exists():
-            logger.info(f"   Keywords not found in data/, checking base directory...")
+            logger.info(f"   Keywords not found in data/, checking root directory...")
             keywords_csv = self.base_dir / "keywords.csv"
         
         # Validate CSV files exist
         if not urls_csv.exists():
             raise FileNotFoundError(
-                f"Missing {urls_csv}. Please create this file with columns: source_name,source_type,url,priority. "
+                f"Missing {urls_csv}. Please create this file with columns: url,source_name,source_type,priority. "
                 f"Searched in: {self.data_dir} and {self.base_dir}"
             )
         if not keywords_csv.exists():
@@ -173,7 +173,7 @@ class IntegratedPipelineRunner:
         logger.info("="*70)
         
         if ArticleExtractor is None:
-            raise ImportError("ArticleExtractor not found. Please ensure agent2_entity_extraction.py is in the current directory.")
+            raise ImportError("ArticleExtractor not found. Please ensure agent2_summarizer.py is in the agents directory.")
         
         if not self.scraped_file:
             raise ValueError("Agent 1 must run first. No scraped file found.")
@@ -219,7 +219,7 @@ class IntegratedPipelineRunner:
         logger.info("="*70)
         
         if ArticleCategorizer is None:
-            raise ImportError("ArticleCategorizer not found. Please ensure agent3_categorizer.py is in the current directory.")
+            raise ImportError("ArticleCategorizer not found. Please ensure agent3_categorizer.py is in the agents directory.")
         
         if not self.enhanced_file:
             raise ValueError("Agent 2 must run first. No enhanced file found.")
@@ -264,7 +264,7 @@ class IntegratedPipelineRunner:
         logger.info("="*70)
         
         if PollGenerator is None:
-            raise ImportError("PollGenerator not found. Please ensure agent4_poll_generator.py is in the current directory.")
+            raise ImportError("PollGenerator not found. Please ensure agent4_question_gen.py is in the agents directory.")
         
         if not self.categorized_file:
             raise ValueError("Agent 3 must run first. No categorized file found.")
@@ -328,11 +328,11 @@ class IntegratedPipelineRunner:
         
         logger.info(f"📤 Initializing Twitter publisher (dry_run={self.dry_run})")
         
-        # Initialize publisher with correct class name
+        # Initialize publisher
         publisher = TwitterPollPublisher(
             db_path=str(self.data_dir / "pharma_news.db"),
             dry_run=self.dry_run,
-            post_interval_minutes=3,  # 15 minutes between posts
+            post_interval_minutes=self.post_interval,
             max_posts_per_day=20
         )
         
@@ -347,7 +347,7 @@ class IntegratedPipelineRunner:
         if self.post_limit:
             logger.info(f"📊 Limiting to {self.post_limit} polls")
         
-        # Publish (polls are already in correct format from Agent 4)
+        # Publish
         logger.info(f"🚀 Publishing polls...")
         summary = publisher.publish_batch(
             polls,
@@ -451,17 +451,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline (scrape 50 articles, no posting)
-  python run_integrated_pipeline.py
+  # Full pipeline (scrape 10 articles from last 7 days, no posting)
+  python run_pipeline.py --target 10 --days-back 7
   
   # Custom article count with poll generation
-  python run_integrated_pipeline.py --target 20 --polls-per-article 4
+  python run_pipeline.py --target 20 --polls-per-article 4 --days-back 7
   
   # Full pipeline with Twitter posting (dry run)
-  python run_integrated_pipeline.py --target 30 --post-polls --dry-run
+  python run_pipeline.py --target 30 --post-polls --dry-run --days-back 7
   
   # Actual posting (remove dry-run flag)
-  python run_integrated_pipeline.py --target 10 --post-polls --post-limit 5 --no-dry-run
+  python run_pipeline.py --target 10 --post-polls --post-limit 5 --no-dry-run --days-back 7
         """
     )
     
@@ -470,8 +470,8 @@ Examples:
                     help="Base directory for all data (default: current directory)")
     parser.add_argument("--target", type=int, default=50,
                         help="Number of articles to scrape (default: 50)")
-    parser.add_argument("--days-back", type=int, default=90,
-                        help="Days to look back (default: 90)")
+    parser.add_argument("--days-back", type=int, default=7,  # FIXED: Changed default from 90 to 7
+                        help="Days to look back (default: 7)")
     parser.add_argument("--polls-per-article", type=int, default=3,
                         help="Polls to generate per article (default: 3)")
     
