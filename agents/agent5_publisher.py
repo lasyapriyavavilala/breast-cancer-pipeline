@@ -1,29 +1,30 @@
 """
-Agent 5: Twitter/X Publisher with Native Polls
-Posts polls as native Twitter polls in threaded format:
-Tweet 1: URL + Company
-Tweet 2 (reply): Summary
-Tweet 3 (reply): Native poll with 4 voting options
+Agent 5: Twitter/X + LinkedIn Publisher with Native Polls
+UPDATED VERSION with:
+1. Grounding score threshold filtering (only post polls above threshold)
+2. LinkedIn posting support alongside Twitter
+3. Enhanced database tracking for both platforms
 """
 
 import os
 import json
 import time
 import sqlite3
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import tweepy
+from linkedin_api import Linkedin
 from loguru import logger
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-class TwitterPollPublisher:
+class MultiPlatformPublisher:
     """
-    Publish polls to Twitter/X as native polls with rate limiting.
+    Publish polls to Twitter/X and LinkedIn with grounding score filtering.
     """
     
     # Common pharma companies for extraction
@@ -37,16 +38,27 @@ class TwitterPollPublisher:
     
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
-        access_token: Optional[str] = None,
-        access_secret: Optional[str] = None,
-        bearer_token: Optional[str] = None,
+        # Twitter credentials
+        twitter_api_key: Optional[str] = None,
+        twitter_api_secret: Optional[str] = None,
+        twitter_access_token: Optional[str] = None,
+        twitter_access_secret: Optional[str] = None,
+        twitter_bearer_token: Optional[str] = None,
+        # LinkedIn credentials
+        linkedin_email: Optional[str] = None,
+        linkedin_password: Optional[str] = None,
+        # Configuration
         db_path: str = "data/pharma_news.db",
+        grounding_threshold: float = 0.75,  # NEW: Only post polls >= this threshold
+        enable_twitter: bool = True,
+        enable_linkedin: bool = True,
         dry_run: bool = True,
         post_interval_minutes: int = 3,
         max_posts_per_day: int = 20
     ):
+        self.grounding_threshold = grounding_threshold
+        self.enable_twitter = enable_twitter
+        self.enable_linkedin = enable_linkedin
         self.dry_run = dry_run
         self.post_interval_minutes = post_interval_minutes
         self.max_posts_per_day = max_posts_per_day
@@ -55,31 +67,52 @@ class TwitterPollPublisher:
         # Initialize database
         self._init_db()
         
-        # Initialize Twitter API if not dry run
-        if not dry_run:
-            api_key = api_key or os.getenv("TWITTER_API_KEY")
-            api_secret = api_secret or os.getenv("TWITTER_API_SECRET")
-            access_token = access_token or os.getenv("TWITTER_ACCESS_TOKEN")
-            access_secret = access_secret or os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
-            bearer_token = bearer_token or os.getenv("TWITTER_BEARER_TOKEN")
+        # Initialize Twitter API if enabled
+        self.twitter_client = None
+        if enable_twitter and not dry_run:
+            twitter_api_key = twitter_api_key or os.getenv("TWITTER_API_KEY")
+            twitter_api_secret = twitter_api_secret or os.getenv("TWITTER_API_SECRET")
+            twitter_access_token = twitter_access_token or os.getenv("TWITTER_ACCESS_TOKEN")
+            twitter_access_secret = twitter_access_secret or os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+            twitter_bearer_token = twitter_bearer_token or os.getenv("TWITTER_BEARER_TOKEN")
             
-            if not all([api_key, api_secret, access_token, access_secret]):
-                raise ValueError("Twitter API credentials not found")
+            if all([twitter_api_key, twitter_api_secret, twitter_access_token, twitter_access_secret]):
+                self.twitter_client = tweepy.Client(
+                    bearer_token=twitter_bearer_token,
+                    consumer_key=twitter_api_key,
+                    consumer_secret=twitter_api_secret,
+                    access_token=twitter_access_token,
+                    access_token_secret=twitter_access_secret,
+                    wait_on_rate_limit=True
+                )
+                logger.info("✅ Twitter API initialized")
+            else:
+                logger.warning("⚠️  Twitter credentials incomplete, Twitter posting disabled")
+                self.enable_twitter = False
+        
+        # Initialize LinkedIn API if enabled
+        self.linkedin_client = None
+        if enable_linkedin and not dry_run:
+            linkedin_email = linkedin_email or os.getenv("LINKEDIN_EMAIL")
+            linkedin_password = linkedin_password or os.getenv("LINKEDIN_PASSWORD")
             
-            # Setup Tweepy v4 client
-            self.client = tweepy.Client(
-                bearer_token=bearer_token,
-                consumer_key=api_key,
-                consumer_secret=api_secret,
-                access_token=access_token,
-                access_token_secret=access_secret,
-                wait_on_rate_limit=True
-            )
-            
-            logger.info("Twitter API initialized")
-        else:
-            self.client = None
-            logger.info("DRY RUN MODE - No actual tweets will be posted")
+            if linkedin_email and linkedin_password:
+                try:
+                    self.linkedin_client = Linkedin(linkedin_email, linkedin_password)
+                    logger.info("✅ LinkedIn API initialized")
+                except Exception as e:
+                    logger.warning(f"⚠️  LinkedIn authentication failed: {e}")
+                    self.enable_linkedin = False
+            else:
+                logger.warning("⚠️  LinkedIn credentials not found, LinkedIn posting disabled")
+                self.enable_linkedin = False
+        
+        if dry_run:
+            logger.info("🧪 DRY RUN MODE - No actual posts will be made")
+        
+        logger.info(f"📊 Grounding threshold: {grounding_threshold}")
+        logger.info(f"🐦 Twitter: {'Enabled' if self.enable_twitter else 'Disabled'}")
+        logger.info(f"💼 LinkedIn: {'Enabled' if self.enable_linkedin else 'Disabled'}")
     
     def _init_db(self):
         """Initialize SQLite database for tracking posts"""
@@ -88,17 +121,20 @@ class TwitterPollPublisher:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Table for polls
+        # Updated table with platform tracking
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 article_url TEXT NOT NULL,
                 poll_question TEXT NOT NULL,
-                tweet_id TEXT,
+                platform TEXT NOT NULL,
+                post_id TEXT,
                 posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 category TEXT,
                 poll_type TEXT,
-                grounding_score REAL
+                grounding_score REAL,
+                grounding_semantic REAL,
+                grounding_entity REAL
             )
         """)
         
@@ -110,18 +146,25 @@ class TwitterPollPublisher:
             CREATE INDEX IF NOT EXISTS idx_posted_at ON posts(posted_at)
         """)
         
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_platform ON posts(platform)
+        """)
+        
         conn.commit()
         conn.close()
-        logger.info(f"Database initialized: {self.db_path}")
+        logger.info(f"✅ Database initialized: {self.db_path}")
     
     def _save_post(
         self, 
         article_url: str,
         poll_question: str,
-        tweet_id: Optional[str] = None,
+        platform: str,
+        post_id: Optional[str] = None,
         category: str = "",
         poll_type: str = "",
-        grounding_score: float = 0.0
+        grounding_score: float = 0.0,
+        grounding_semantic: float = 0.0,
+        grounding_entity: float = 0.0
     ):
         """Save posted poll to database"""
         conn = sqlite3.connect(self.db_path)
@@ -129,24 +172,32 @@ class TwitterPollPublisher:
         
         cursor.execute("""
             INSERT INTO posts 
-            (article_url, poll_question, tweet_id, category, poll_type, grounding_score)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (article_url, poll_question, tweet_id, category, poll_type, grounding_score))
+            (article_url, poll_question, platform, post_id, category, poll_type, 
+             grounding_score, grounding_semantic, grounding_entity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (article_url, poll_question, platform, post_id, category, poll_type, 
+              grounding_score, grounding_semantic, grounding_entity))
         
         conn.commit()
         conn.close()
     
-    def _get_posts_today(self) -> int:
-        """Count posts made today"""
+    def _get_posts_today(self, platform: Optional[str] = None) -> int:
+        """Count posts made today (optionally filtered by platform)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        cursor.execute("""
-            SELECT COUNT(*) FROM posts
-            WHERE posted_at >= ? AND tweet_id IS NOT NULL
-        """, (today,))
+        if platform:
+            cursor.execute("""
+                SELECT COUNT(*) FROM posts
+                WHERE posted_at >= ? AND post_id IS NOT NULL AND platform = ?
+            """, (today, platform))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*) FROM posts
+                WHERE posted_at >= ? AND post_id IS NOT NULL
+            """, (today,))
         
         count = cursor.fetchone()[0]
         conn.close()
@@ -155,10 +206,10 @@ class TwitterPollPublisher:
     
     def _can_post_now(self) -> bool:
         """Check if we can post based on rate limits"""
-        # Check daily limit
+        # Check daily limit (total across platforms)
         posts_today = self._get_posts_today()
         if posts_today >= self.max_posts_per_day:
-            logger.warning(f"Daily limit reached: {posts_today}/{self.max_posts_per_day}")
+            logger.warning(f"⏰ Daily limit reached: {posts_today}/{self.max_posts_per_day}")
             return False
         
         # Check interval
@@ -167,7 +218,7 @@ class TwitterPollPublisher:
         
         cursor.execute("""
             SELECT posted_at FROM posts
-            WHERE tweet_id IS NOT NULL
+            WHERE post_id IS NOT NULL
             ORDER BY posted_at DESC
             LIMIT 1
         """)
@@ -180,7 +231,7 @@ class TwitterPollPublisher:
             time_since_last = datetime.now() - last_post_time
             if time_since_last < timedelta(minutes=self.post_interval_minutes):
                 minutes_ago = time_since_last.seconds // 60
-                logger.info(f"Too soon since last post ({minutes_ago} min ago)")
+                logger.info(f"⏰ Too soon since last post ({minutes_ago} min ago)")
                 return False
         
         return True
@@ -198,55 +249,73 @@ class TwitterPollPublisher:
         match = re.search(r"(\w+)'s", headline)
         if match:
             potential_company = match.group(1)
-            if len(potential_company) > 3:  # Avoid very short matches
+            if len(potential_company) > 3:
                 return potential_company
         
         return ""
     
     @staticmethod
     def _safe_trim(text: str, max_chars: int = 280) -> str:
-        """Trim text to fit Twitter limit"""
+        """Trim text to fit character limit"""
         if len(text) <= max_chars:
             return text
         return text[:max_chars-3] + "..."
     
-    def post_poll_thread(self, poll_data: dict) -> Optional[str]:
+    def _check_grounding_threshold(self, poll_data: Dict) -> Tuple[bool, str]:
+        """
+        Check if poll meets grounding threshold.
+        
+        Returns:
+            Tuple of (passes_threshold, reason)
+        """
+        grounding_score_data = poll_data.get('grounding_score', {})
+        overall_score = grounding_score_data.get('overall', 0.0)
+        needs_review = grounding_score_data.get('needs_review', False)
+        
+        if overall_score < self.grounding_threshold:
+            reason = f"Below threshold ({overall_score:.3f} < {self.grounding_threshold})"
+            return False, reason
+        
+        if needs_review:
+            reason = f"Flagged for review (score: {overall_score:.3f})"
+            return False, reason
+        
+        return True, f"Passed (score: {overall_score:.3f})"
+    
+    # ==================== TWITTER POSTING ====================
+    
+    def post_twitter_thread(self, poll_data: Dict) -> Optional[str]:
         """
         Post a native Twitter poll in a 3-tweet thread:
         Tweet 1: URL + Company
         Tweet 2 (reply): Summary/Headline
         Tweet 3 (reply): Native poll with 4 voting options
         
-        Args:
-            poll_data: Poll dict from Agent 4
-        
         Returns:
             Poll tweet ID if posted, None otherwise
         """
+        if not self.enable_twitter:
+            return None
+        
         question = poll_data.get('question', '')
         options = poll_data.get('options', [])
         article_url = poll_data.get('article_url', '')
         headline = poll_data.get('article_headline', '')
+        summary = poll_data.get('article_summary', '')
         category = poll_data.get('category', '')
         poll_type = poll_data.get('poll_type', '')
-        grounding_score = poll_data.get('grounding_score', {}).get('overall', 0.0)
+        grounding_data = poll_data.get('grounding_score', {})
         
         if not question or len(options) < 2:
-            logger.warning(f"Skipping invalid poll: missing question or options")
+            logger.warning(f"⏭️  Skipping invalid poll: missing question or options")
             return None
         
         # Limit to 4 options (Twitter requirement)
         options = options[:4]
         
-        # Ensure we have at least 2 options
-        if len(options) < 2:
-            logger.warning(f"Skipping poll: need at least 2 options, got {len(options)}")
-            return None
-        
-        # Extract company from headline
+        # Extract company
         company = self._extract_company(headline)
         
-        # Build thread
         try:
             # ===== TWEET 1: URL + Company =====
             tweet1_parts = []
@@ -259,36 +328,39 @@ class TwitterPollPublisher:
             tweet1_text = self._safe_trim(tweet1_text, 280)
             
             if self.dry_run:
-                logger.info(f"[DRY RUN] Would post 3-tweet poll thread:")
+                logger.info(f"[DRY RUN - TWITTER] 3-tweet thread:")
                 logger.info(f"  Tweet 1: {tweet1_text}")
-                logger.info(f"  Tweet 2: {self._safe_trim(headline, 275)}")
+                logger.info(f"  Tweet 2: {self._safe_trim(summary or headline, 275)}")
                 logger.info(f"  Tweet 3 (POLL): {question}")
                 for i, opt in enumerate(options, 1):
                     logger.info(f"    {i}. {opt}")
-                self._save_post(article_url, question, None, category, poll_type, grounding_score)
-                return "DRY_RUN"
+                
+                self._save_post(
+                    article_url, question, "twitter", "DRY_RUN", category, poll_type,
+                    grounding_data.get('overall', 0.0),
+                    grounding_data.get('semantic', 0.0),
+                    grounding_data.get('entity', 0.0)
+                )
+                return "DRY_RUN_TWITTER"
             
             # Post tweet 1 (URL + company)
-            response1 = self.client.create_tweet(text=tweet1_text)
+            response1 = self.twitter_client.create_tweet(text=tweet1_text)
             tweet1_id = response1.data['id']
-            logger.info(f"✓ Posted tweet 1 (URL + company) - ID: {tweet1_id}")
+            logger.info(f"✓ Twitter Tweet 1 posted - ID: {tweet1_id}")
             
-            # ===== TWEET 2: Summary (280 chars from Agent 2) =====
-            # Use summary_280 from Agent 2, fallback to headline if not available
-            summary = poll_data.get('article_summary', '')  # ← GET SUMMARY
+            # ===== TWEET 2: Summary =====
             tweet2_text = summary if summary else headline
             tweet2_text = self._safe_trim(tweet2_text, 275)
-
-            response2 = self.client.create_tweet(
+            
+            response2 = self.twitter_client.create_tweet(
                 text=tweet2_text,
                 in_reply_to_tweet_id=tweet1_id
             )
             tweet2_id = response2.data['id']
-            logger.info(f"✓ Posted tweet 2 (summary) - ID: {tweet2_id}")
-            logger.info(f"  Summary: {tweet2_text[:100]}...")  # ← LOG SUMMARY
+            logger.info(f"✓ Twitter Tweet 2 posted - ID: {tweet2_id}")
             
-            # ===== TWEET 3: Native Poll (reply to tweet 2) =====
-            poll_response = self.client.create_tweet(
+            # ===== TWEET 3: Native Poll =====
+            poll_response = self.twitter_client.create_tweet(
                 text=question,
                 poll_options=options,
                 poll_duration_minutes=1440,  # 24 hours
@@ -296,22 +368,174 @@ class TwitterPollPublisher:
             )
             poll_id = poll_response.data['id']
             
-            logger.success(f"✓ Posted poll (ID: {poll_id})")
+            logger.success(f"✅ Twitter poll posted - ID: {poll_id}")
             logger.info(f"  Q: {question}")
-            for i, opt in enumerate(options, 1):
-                logger.info(f"  {i}. {opt}")
-            logger.info(f"  URL: {article_url}")
             
             # Save to database
-            self._save_post(article_url, question, poll_id, category, poll_type, grounding_score)
+            self._save_post(
+                article_url, question, "twitter", poll_id, category, poll_type,
+                grounding_data.get('overall', 0.0),
+                grounding_data.get('semantic', 0.0),
+                grounding_data.get('entity', 0.0)
+            )
             
             return poll_id
             
         except Exception as e:
-            logger.error(f"Failed to post poll thread: {e}")
+            logger.error(f"❌ Twitter posting failed: {e}")
             import traceback
             traceback.print_exc()
             return None
+    
+    # ==================== LINKEDIN POSTING ====================
+    
+    def post_linkedin_poll(self, poll_data: Dict) -> Optional[str]:
+        """
+        Post a LinkedIn poll as a single post with poll options.
+        
+        LinkedIn Format:
+        - Main post text: URL + Company + Summary + Question
+        - Poll options: Up to 4 choices
+        - Duration: 1 week (LinkedIn default)
+        
+        Returns:
+            LinkedIn post ID if posted, None otherwise
+        """
+        if not self.enable_linkedin:
+            return None
+        
+        question = poll_data.get('question', '')
+        options = poll_data.get('options', [])
+        article_url = poll_data.get('article_url', '')
+        headline = poll_data.get('article_headline', '')
+        summary = poll_data.get('article_summary', '')
+        category = poll_data.get('category', '')
+        poll_type = poll_data.get('poll_type', '')
+        grounding_data = poll_data.get('grounding_score', {})
+        
+        if not question or len(options) < 2:
+            logger.warning(f"⏭️  Skipping invalid poll: missing question or options")
+            return None
+        
+        # LinkedIn allows 2-4 poll options
+        options = options[:4]
+        
+        # Extract company
+        company = self._extract_company(headline)
+        
+        try:
+            # Build LinkedIn post text
+            post_parts = []
+            
+            if company:
+                post_parts.append(f"🏢 {company}")
+            
+            if summary:
+                post_parts.append(f"\n{summary}")
+            elif headline:
+                post_parts.append(f"\n{headline}")
+            
+            post_parts.append(f"\n\n❓ {question}")
+            post_parts.append(f"\n\n🔗 Read more: {article_url}")
+            
+            # Add hashtags
+            post_parts.append("\n\n#BreastCancer #Oncology #MedicalAffairs #HCP")
+            
+            post_text = "".join(post_parts)
+            
+            # LinkedIn post text limit is ~3000 chars, but keep it concise
+            if len(post_text) > 2000:
+                post_text = post_text[:1997] + "..."
+            
+            if self.dry_run:
+                logger.info(f"[DRY RUN - LINKEDIN] Poll post:")
+                logger.info(f"  Text: {post_text[:200]}...")
+                logger.info(f"  Poll question: {question}")
+                for i, opt in enumerate(options, 1):
+                    logger.info(f"    {i}. {opt}")
+                
+                self._save_post(
+                    article_url, question, "linkedin", "DRY_RUN", category, poll_type,
+                    grounding_data.get('overall', 0.0),
+                    grounding_data.get('semantic', 0.0),
+                    grounding_data.get('entity', 0.0)
+                )
+                return "DRY_RUN_LINKEDIN"
+            
+            # Post to LinkedIn using the python-linkedin-v2 API
+            # Note: LinkedIn API for polls is complex and may require special permissions
+            # This is a simplified example - you may need to adjust based on API access
+            
+            # IMPORTANT: LinkedIn's official API has restrictions on poll creation
+            # You may need to use LinkedIn's "Share API" with poll parameters
+            # Or consider using a LinkedIn automation tool
+            
+            # Placeholder for actual LinkedIn poll posting
+            # The linkedin_api library may not support polls directly
+            # You might need to use selenium or another method
+            
+            logger.warning("⚠️  LinkedIn poll posting requires manual implementation")
+            logger.warning("    LinkedIn API has restrictions on automated poll creation")
+            logger.info(f"    Would post: {post_text[:100]}...")
+            
+            # For now, post as regular text (without poll)
+            # Uncomment when you have proper LinkedIn API access:
+            # post_id = self.linkedin_client.submit_share(
+            #     comment=post_text,
+            #     visibility='PUBLIC'
+            # )
+            
+            post_id = "LINKEDIN_MANUAL_POST_NEEDED"
+            
+            self._save_post(
+                article_url, question, "linkedin", post_id, category, poll_type,
+                grounding_data.get('overall', 0.0),
+                grounding_data.get('semantic', 0.0),
+                grounding_data.get('entity', 0.0)
+            )
+            
+            return post_id
+            
+        except Exception as e:
+            logger.error(f"❌ LinkedIn posting failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    # ==================== MAIN PUBLISHING LOGIC ====================
+    
+    def publish_poll(self, poll_data: Dict) -> Dict[str, Optional[str]]:
+        """
+        Publish poll to enabled platforms (Twitter and/or LinkedIn).
+        
+        Returns:
+            Dict with platform names as keys and post IDs as values
+        """
+        results = {}
+        
+        # Check grounding threshold FIRST
+        passes, reason = self._check_grounding_threshold(poll_data)
+        if not passes:
+            logger.warning(f"⏭️  SKIPPED: {reason}")
+            logger.warning(f"   Question: {poll_data.get('question', '')[:60]}...")
+            return {"skipped": reason}
+        
+        logger.info(f"✅ Grounding check passed: {reason}")
+        
+        # Post to Twitter
+        if self.enable_twitter:
+            twitter_id = self.post_twitter_thread(poll_data)
+            results['twitter'] = twitter_id
+            
+            if twitter_id and not self.dry_run:
+                time.sleep(2)  # Brief pause between platforms
+        
+        # Post to LinkedIn
+        if self.enable_linkedin:
+            linkedin_id = self.post_linkedin_poll(poll_data)
+            results['linkedin'] = linkedin_id
+        
+        return results
     
     def publish_batch(
         self,
@@ -320,7 +544,7 @@ class TwitterPollPublisher:
         respect_rate_limits: bool = True
     ) -> Dict:
         """
-        Publish batch of polls.
+        Publish batch of polls with grounding threshold filtering.
         
         Args:
             polls: List of poll dicts from Agent 4
@@ -333,83 +557,151 @@ class TwitterPollPublisher:
         if limit:
             polls = polls[:limit]
         
-        posted = 0
-        skipped = 0
+        posted_twitter = 0
+        posted_linkedin = 0
+        skipped_threshold = 0
+        skipped_rate_limit = 0
         failed = 0
         
-        logger.info(f"Publishing {len(polls)} polls...")
+        logger.info(f"📊 Processing {len(polls)} polls...")
+        logger.info(f"🎯 Grounding threshold: {self.grounding_threshold}")
         
         for i, poll in enumerate(polls, 1):
             # Check rate limits
             if respect_rate_limits and not self._can_post_now():
-                logger.info(f"Rate limit reached. Skipping remaining {len(polls) - i + 1} polls")
-                skipped += len(polls) - i + 1
+                logger.info(f"⏰ Rate limit reached. Skipping remaining {len(polls) - i + 1} polls")
+                skipped_rate_limit += len(polls) - i + 1
                 break
             
-            # Post poll
-            result = self.post_poll_thread(poll)
+            # Check grounding threshold
+            passes, reason = self._check_grounding_threshold(poll)
+            if not passes:
+                logger.info(f"[{i}/{len(polls)}] ⏭️  Skipped: {reason}")
+                skipped_threshold += 1
+                continue
             
-            if result:
-                posted += 1
-            elif result is None:
-                failed += 1
+            # Post to enabled platforms
+            logger.info(f"[{i}/{len(polls)}] 📤 Publishing poll...")
+            results = self.publish_poll(poll)
+            
+            if 'skipped' in results:
+                skipped_threshold += 1
             else:
-                skipped += 1
+                if results.get('twitter'):
+                    posted_twitter += 1
+                if results.get('linkedin'):
+                    posted_linkedin += 1
+                
+                if not results.get('twitter') and not results.get('linkedin'):
+                    failed += 1
             
             # Wait between posts (if not dry run and not last item)
-            if not self.dry_run and i < len(polls) and result:
+            if not self.dry_run and i < len(polls) and (results.get('twitter') or results.get('linkedin')):
                 wait_seconds = self.post_interval_minutes * 60
-                logger.info(f"Waiting {self.post_interval_minutes} min until next post...")
+                logger.info(f"⏳ Waiting {self.post_interval_minutes} min until next post...")
                 time.sleep(wait_seconds)
         
         summary = {
             "total": len(polls),
-            "posted": posted if not self.dry_run else 0,
-            "skipped": skipped,
+            "posted_twitter": posted_twitter if not self.dry_run else 0,
+            "posted_linkedin": posted_linkedin if not self.dry_run else 0,
+            "skipped_threshold": skipped_threshold,
+            "skipped_rate_limit": skipped_rate_limit,
             "failed": failed,
+            "grounding_threshold": self.grounding_threshold,
             "dry_run": self.dry_run
         }
         
-        logger.info("=" * 50)
-        logger.info("PUBLISHING SUMMARY")
-        logger.info("=" * 50)
-        for key, value in summary.items():
-            logger.info(f"  {key}: {value}")
+        logger.info("=" * 70)
+        logger.info("📊 PUBLISHING SUMMARY")
+        logger.info("=" * 70)
+        logger.info(f"  Total polls: {summary['total']}")
+        logger.info(f"  Posted to Twitter: {summary['posted_twitter']}")
+        logger.info(f"  Posted to LinkedIn: {summary['posted_linkedin']}")
+        logger.info(f"  Skipped (below threshold): {summary['skipped_threshold']}")
+        logger.info(f"  Skipped (rate limit): {summary['skipped_rate_limit']}")
+        logger.info(f"  Failed: {summary['failed']}")
+        logger.info(f"  Grounding threshold: {summary['grounding_threshold']}")
+        logger.info(f"  Dry run: {summary['dry_run']}")
+        logger.info("=" * 70)
         
         return summary
     
-    def get_stats(self) -> Dict:
-        """Get statistics from database"""
+    def get_stats(self, platform: Optional[str] = None) -> Dict:
+        """Get statistics from database (optionally filtered by platform)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT COUNT(*) FROM posts WHERE tweet_id IS NOT NULL")
+        # Total posts
+        if platform:
+            cursor.execute("""
+                SELECT COUNT(*) FROM posts 
+                WHERE post_id IS NOT NULL AND platform = ?
+            """, (platform,))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*) FROM posts WHERE post_id IS NOT NULL
+            """)
         total_posted = cursor.fetchone()[0]
         
-        cursor.execute("""
+        # By category
+        query = """
             SELECT category, COUNT(*) as count 
             FROM posts 
-            WHERE tweet_id IS NOT NULL
-            GROUP BY category
-            ORDER BY count DESC
-        """)
+            WHERE post_id IS NOT NULL
+        """
+        if platform:
+            query += " AND platform = ?"
+            cursor.execute(query + " GROUP BY category ORDER BY count DESC", (platform,))
+        else:
+            cursor.execute(query + " GROUP BY category ORDER BY count DESC")
         by_category = dict(cursor.fetchall())
         
-        cursor.execute("""
+        # By poll type
+        query = """
             SELECT poll_type, COUNT(*) as count 
             FROM posts 
-            WHERE tweet_id IS NOT NULL
-            GROUP BY poll_type
-            ORDER BY count DESC
-        """)
+            WHERE post_id IS NOT NULL
+        """
+        if platform:
+            query += " AND platform = ?"
+            cursor.execute(query + " GROUP BY poll_type ORDER BY count DESC", (platform,))
+        else:
+            cursor.execute(query + " GROUP BY poll_type ORDER BY count DESC")
         by_type = dict(cursor.fetchall())
+        
+        # Grounding score stats
+        query = """
+            SELECT 
+                AVG(grounding_score) as avg_overall,
+                AVG(grounding_semantic) as avg_semantic,
+                AVG(grounding_entity) as avg_entity,
+                MIN(grounding_score) as min_score,
+                MAX(grounding_score) as max_score
+            FROM posts 
+            WHERE post_id IS NOT NULL
+        """
+        if platform:
+            query += " AND platform = ?"
+            cursor.execute(query, (platform,))
+        else:
+            cursor.execute(query)
+        
+        grounding_stats = cursor.fetchone()
         
         conn.close()
         
         return {
             "total_posted": total_posted,
             "by_category": by_category,
-            "by_type": by_type
+            "by_type": by_type,
+            "grounding_avg": {
+                "overall": round(grounding_stats[0], 3) if grounding_stats[0] else 0,
+                "semantic": round(grounding_stats[1], 3) if grounding_stats[1] else 0,
+                "entity": round(grounding_stats[2], 3) if grounding_stats[2] else 0,
+                "min": round(grounding_stats[3], 3) if grounding_stats[3] else 0,
+                "max": round(grounding_stats[4], 3) if grounding_stats[4] else 0
+            }
         }
 
 
@@ -417,20 +709,41 @@ def main():
     """CLI entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Twitter Poll Publisher (Agent 5)")
+    parser = argparse.ArgumentParser(description="Multi-Platform Publisher (Agent 5 - Updated)")
     parser.add_argument("--input", required=True, help="Input JSON file (polls from Agent 4)")
-    parser.add_argument("--dry-run", action="store_true", help="Dry run mode")
-    parser.add_argument("--post-interval", type=int, default=60, help="Minutes between posts")
-    parser.add_argument("--max-per-day", type=int, default=20, help="Max posts per day")
-    parser.add_argument("--limit", type=int, help="Limit number of polls to post")
-    parser.add_argument("--stats", action="store_true", help="Show stats and exit")
-    parser.add_argument("--db-path", default="data/pharma_news.db", help="Database path")
+    parser.add_argument("--grounding-threshold", type=float, default=0.75,
+                        help="Minimum grounding score to post (default: 0.75)")
+    parser.add_argument("--enable-twitter", action="store_true", default=True,
+                        help="Enable Twitter posting (default: True)")
+    parser.add_argument("--disable-twitter", action="store_false", dest="enable_twitter",
+                        help="Disable Twitter posting")
+    parser.add_argument("--enable-linkedin", action="store_true", default=True,
+                        help="Enable LinkedIn posting (default: True)")
+    parser.add_argument("--disable-linkedin", action="store_false", dest="enable_linkedin",
+                        help="Disable LinkedIn posting")
+    parser.add_argument("--dry-run", action="store_true", default=True,
+                        help="Dry run mode (default: True)")
+    parser.add_argument("--no-dry-run", action="store_false", dest="dry_run",
+                        help="Actually post to platforms")
+    parser.add_argument("--post-interval", type=int, default=3,
+                        help="Minutes between posts (default: 3)")
+    parser.add_argument("--max-per-day", type=int, default=20,
+                        help="Max posts per day (default: 20)")
+    parser.add_argument("--limit", type=int,
+                        help="Limit number of polls to process")
+    parser.add_argument("--stats", action="store_true",
+                        help="Show stats and exit")
+    parser.add_argument("--db-path", default="data/pharma_news.db",
+                        help="Database path")
     
     args = parser.parse_args()
     
     # Initialize publisher
-    publisher = TwitterPollPublisher(
+    publisher = MultiPlatformPublisher(
         db_path=args.db_path,
+        grounding_threshold=args.grounding_threshold,
+        enable_twitter=args.enable_twitter,
+        enable_linkedin=args.enable_linkedin,
         dry_run=args.dry_run,
         post_interval_minutes=args.post_interval,
         max_posts_per_day=args.max_per_day
@@ -438,25 +751,42 @@ def main():
     
     # Show stats if requested
     if args.stats:
+        logger.info("=" * 70)
+        logger.info("📊 POSTING STATISTICS")
+        logger.info("=" * 70)
+        
+        # Overall stats
         stats = publisher.get_stats()
-        logger.info("=" * 50)
-        logger.info("POSTING STATISTICS")
-        logger.info("=" * 50)
-        logger.info(f"Total posted: {stats['total_posted']}")
-        logger.info("\nBy category:")
-        for cat, count in stats['by_category'].items():
-            logger.info(f"  {cat}: {count}")
-        logger.info("\nBy poll type:")
-        for ptype, count in stats['by_type'].items():
-            logger.info(f"  {ptype}: {count}")
+        logger.info(f"\n🌐 All Platforms:")
+        logger.info(f"  Total posted: {stats['total_posted']}")
+        logger.info(f"  Avg grounding score: {stats['grounding_avg']['overall']}")
+        logger.info(f"  Score range: {stats['grounding_avg']['min']} - {stats['grounding_avg']['max']}")
+        
+        # Twitter stats
+        twitter_stats = publisher.get_stats("twitter")
+        logger.info(f"\n🐦 Twitter:")
+        logger.info(f"  Total posted: {twitter_stats['total_posted']}")
+        
+        # LinkedIn stats
+        linkedin_stats = publisher.get_stats("linkedin")
+        logger.info(f"\n💼 LinkedIn:")
+        logger.info(f"  Total posted: {linkedin_stats['total_posted']}")
+        
         return
     
     # Load polls
-    logger.info(f"Loading polls from {args.input}")
+    logger.info(f"📂 Loading polls from {args.input}")
     with open(args.input, "r", encoding="utf-8") as f:
         polls = json.load(f)
     
-    logger.info(f"Loaded {len(polls)} polls")
+    logger.info(f"📊 Loaded {len(polls)} polls")
+    
+    # Show distribution by grounding score
+    above_threshold = sum(1 for p in polls if p.get('grounding_score', {}).get('overall', 0) >= args.grounding_threshold)
+    below_threshold = len(polls) - above_threshold
+    
+    logger.info(f"  ✅ Above threshold ({args.grounding_threshold}): {above_threshold}")
+    logger.info(f"  ⚠️  Below threshold: {below_threshold}")
     
     # Publish
     summary = publisher.publish_batch(

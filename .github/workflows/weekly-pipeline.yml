@@ -1,4 +1,4 @@
-name: Weekly Breast Cancer News Pipeline - FIXED
+name: Weekly Breast Cancer News Pipeline - UPDATED for Agent 5
 
 on:
   schedule:
@@ -23,8 +23,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          # NEW: Install LinkedIn API
+          pip install linkedin-api
       
-      # FIXED: Selenium setup for GitHub Actions
       - name: Setup Chrome and ChromeDriver
         run: |
           # Install Chrome
@@ -70,20 +71,27 @@ jobs:
           echo "✅ CSV files found:"
           ls -lh *.csv
       
-      # FIXED: Run pipeline with correct parameters for breast cancer scraping
-      - name: Run pipeline (Breast Cancer - 7 days, 10 articles, 2 polls each)
+      # ==================== UPDATED: Run pipeline with new Agent 5 parameters ====================
+      - name: Run pipeline with grounding filtering + LinkedIn support
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Twitter credentials
           TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
           TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
           TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
           TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
+          # NEW: LinkedIn credentials
+          LINKEDIN_EMAIL: ${{ secrets.LINKEDIN_EMAIL }}
+          LINKEDIN_PASSWORD: ${{ secrets.LINKEDIN_PASSWORD }}
         run: |
           python run_pipeline.py \
             --target 10 \
             --days-back 7 \
             --polls-per-article 2 \
+            --grounding-threshold 0.75 \
+            --enable-twitter \
+            --enable-linkedin \
             --post-polls \
             --post-limit 5 \
             --post-interval 3 \
@@ -146,7 +154,7 @@ jobs:
           path: logs/*.log
           retention-days: 30
       
-      # ===== SUMMARY REPORT =====
+      # ===== UPDATED SUMMARY REPORT =====
       - name: Generate Pipeline Summary
         if: always()
         run: |
@@ -173,6 +181,21 @@ jobs:
           if [ -f "data/outputs/twitter_polls.json" ]; then
             POLLS_COUNT=$(python -c "import json; print(len(json.load(open('data/outputs/twitter_polls.json'))))" 2>/dev/null || echo "0")
             echo "- **Agent 4 (Polls):** $POLLS_COUNT polls generated" >> pipeline_summary.md
+            
+            # NEW: Show grounding stats
+            ABOVE_THRESHOLD=$(python -c "import json; polls=json.load(open('data/outputs/twitter_polls.json')); print(sum(1 for p in polls if p.get('grounding_score',{}).get('overall',0)>=0.75))" 2>/dev/null || echo "0")
+            BELOW_THRESHOLD=$(python -c "import json; polls=json.load(open('data/outputs/twitter_polls.json')); print(sum(1 for p in polls if p.get('grounding_score',{}).get('overall',0)<0.75))" 2>/dev/null || echo "0")
+            echo "  - Above threshold (0.75): $ABOVE_THRESHOLD" >> pipeline_summary.md
+            echo "  - Below threshold: $BELOW_THRESHOLD" >> pipeline_summary.md
+          fi
+          
+          # NEW: Show posting stats from database
+          if [ -f "data/pharma_news.db" ]; then
+            TWITTER_POSTS=$(sqlite3 data/pharma_news.db "SELECT COUNT(*) FROM posts WHERE platform='twitter' AND post_id IS NOT NULL;" 2>/dev/null || echo "0")
+            LINKEDIN_POSTS=$(sqlite3 data/pharma_news.db "SELECT COUNT(*) FROM posts WHERE platform='linkedin' AND post_id IS NOT NULL;" 2>/dev/null || echo "0")
+            echo "- **Agent 5 (Publisher):**" >> pipeline_summary.md
+            echo "  - Twitter posts: $TWITTER_POSTS" >> pipeline_summary.md
+            echo "  - LinkedIn posts: $LINKEDIN_POSTS" >> pipeline_summary.md
           fi
           
           echo "" >> pipeline_summary.md
