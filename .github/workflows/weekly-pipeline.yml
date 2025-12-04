@@ -89,7 +89,7 @@ jobs:
             --target 10 \
             --days-back 7 \
             --polls-per-article 2 \
-            --grounding-threshold 0.75 \
+            --grounding-threshold 0.6 \
             --enable-twitter \
             --enable-linkedin \
             --post-polls \
