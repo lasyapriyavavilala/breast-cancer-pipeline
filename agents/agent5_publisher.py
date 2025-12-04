@@ -391,13 +391,23 @@ class MultiPlatformPublisher:
     
     def post_linkedin_poll(self, poll_data: Dict) -> Optional[str]:
         """
-    Post LinkedIn poll as text post with manual voting instructions.
-    Uses linkedin-api library with email/password authentication.
-    
-    Returns:
-        LinkedIn post ID if posted, None otherwise
-    """
+        Post to LinkedIn Company Page using OAuth.
+        Requires: LINKEDIN_ACCESS_TOKEN and LINKEDIN_COMPANY_ID in .env
+        
+        Returns:
+            LinkedIn post ID if posted, None otherwise
+        """
         if not self.enable_linkedin:
+            return None
+        
+        # Get OAuth credentials
+        access_token = os.getenv("LINKEDIN_ACCESS_TOKEN")
+        company_id = os.getenv("LINKEDIN_COMPANY_ID")
+        
+        if not access_token or not company_id:
+            logger.error("❌ Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_COMPANY_ID")
+            logger.error("   Run: python linkedin_oauth_token_generator.py")
+            logger.error("   And: python linkedin_get_company_id.py")
             return None
         
         question = poll_data.get('question', '')
@@ -443,13 +453,14 @@ class MultiPlatformPublisher:
         
         post_text = "".join(post_parts)
         
-        # Trim if too long (LinkedIn limit is ~3000 chars)
+        # Trim if too long
         if len(post_text) > 2000:
             post_text = post_text[:1997] + "..."
         
         try:
             if self.dry_run:
-                logger.info(f"[DRY RUN - LINKEDIN]")
+                logger.info(f"[DRY RUN - LINKEDIN COMPANY PAGE]")
+                logger.info(f"  Company ID: {company_id}")
                 logger.info(f"  Post text: {post_text[:100]}...")
                 logger.info(f"  Poll question: {question}")
                 for i, opt in enumerate(options, 1):
@@ -463,19 +474,46 @@ class MultiPlatformPublisher:
                 )
                 return "DRY_RUN_LINKEDIN"
             
-            # ===== ACTUAL LINKEDIN POSTING =====
+            # ===== POST TO COMPANY PAGE USING OAUTH =====
             
-            # Post using linkedin_api's submit_share method
-            response = self.linkedin_client.submit_share(
-                comment=post_text,
-                visibility='PUBLIC'
-            )
+            import requests
             
-            if response:
-                # Extract post ID from response
-                post_id = response.get('updateKey', 'LINKEDIN_POST_SUCCESS')
-                logger.success(f"✅ LinkedIn post created - ID: {post_id}")
+            url = "https://api.linkedin.com/v2/ugcPosts"
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "X-Restli-Protocol-Version": "2.0.0"
+            }
+            
+            # Build payload for company page post
+            payload = {
+                "author": f"urn:li:organization:{company_id}",
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {
+                            "text": post_text
+                        },
+                        "shareMediaCategory": "NONE"
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                }
+            }
+            
+            # Make API request
+            response = requests.post(url, headers=headers, json=payload)
+            
+            if response.status_code == 201:
+                # Success!
+                response_data = response.json()
+                post_id = response_data.get('id', 'LINKEDIN_SUCCESS')
+                
+                logger.success(f"✅ LinkedIn company page post created - ID: {post_id}")
                 logger.info(f"  Q: {question}")
+                logger.info(f"  Posted to: BreastCancerInsightsCapstone")
                 
                 # Save to database
                 self._save_post(
@@ -486,8 +524,22 @@ class MultiPlatformPublisher:
                 )
                 
                 return post_id
+            
+            elif response.status_code == 401:
+                logger.error(f"❌ LinkedIn authentication failed (401)")
+                logger.error(f"   Your access token may have expired")
+                logger.error(f"   Run: python linkedin_oauth_token_generator.py")
+                return None
+            
+            elif response.status_code == 403:
+                logger.error(f"❌ LinkedIn permission denied (403)")
+                logger.error(f"   Your app may not have permission to post to company pages")
+                logger.error(f"   Check: App needs 'w_organization_social' scope")
+                return None
+            
             else:
-                logger.error(f"❌ LinkedIn posting failed: No response")
+                logger.error(f"❌ LinkedIn API error ({response.status_code})")
+                logger.error(f"   Response: {response.text}")
                 return None
                 
         except Exception as e:
@@ -495,7 +547,7 @@ class MultiPlatformPublisher:
             import traceback
             traceback.print_exc()
             return None
-    
+
     # ==================== MAIN PUBLISHING LOGIC ====================
     
     def publish_poll(self, poll_data: Dict) -> Dict[str, Optional[str]]:
