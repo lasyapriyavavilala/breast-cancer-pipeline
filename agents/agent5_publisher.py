@@ -391,16 +391,12 @@ class MultiPlatformPublisher:
     
     def post_linkedin_poll(self, poll_data: Dict) -> Optional[str]:
         """
-        Post a LinkedIn poll as a single post with poll options.
-        
-        LinkedIn Format:
-        - Main post text: URL + Company + Summary + Question
-        - Poll options: Up to 4 choices
-        - Duration: 1 week (LinkedIn default)
-        
-        Returns:
-            LinkedIn post ID if posted, None otherwise
-        """
+    Post LinkedIn poll as text post with manual voting instructions.
+    Uses linkedin-api library with email/password authentication.
+    
+    Returns:
+        LinkedIn post ID if posted, None otherwise
+    """
         if not self.enable_linkedin:
             return None
         
@@ -423,33 +419,38 @@ class MultiPlatformPublisher:
         # Extract company
         company = self._extract_company(headline)
         
+        # Build post text
+        post_parts = []
+        
+        if company:
+            post_parts.append(f"🏢 {company}\n")
+        
+        if summary:
+            post_parts.append(f"{summary}\n")
+        elif headline:
+            post_parts.append(f"{headline}\n")
+        
+        post_parts.append(f"\n❓ {question}\n")
+        post_parts.append("\nPlease comment with your answer:")
+        
+        # Add options with emojis
+        emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+        for i, option in enumerate(options):
+            post_parts.append(f"\n{emojis[i]} {option}")
+        
+        post_parts.append(f"\n\n🔗 Read more: {article_url}")
+        post_parts.append("\n\n#BreastCancer #Oncology #MedicalAffairs #HCP")
+        
+        post_text = "".join(post_parts)
+        
+        # Trim if too long (LinkedIn limit is ~3000 chars)
+        if len(post_text) > 2000:
+            post_text = post_text[:1997] + "..."
+        
         try:
-            # Build LinkedIn post text
-            post_parts = []
-            
-            if company:
-                post_parts.append(f"🏢 {company}")
-            
-            if summary:
-                post_parts.append(f"\n{summary}")
-            elif headline:
-                post_parts.append(f"\n{headline}")
-            
-            post_parts.append(f"\n\n❓ {question}")
-            post_parts.append(f"\n\n🔗 Read more: {article_url}")
-            
-            # Add hashtags
-            post_parts.append("\n\n#BreastCancer #Oncology #MedicalAffairs #HCP")
-            
-            post_text = "".join(post_parts)
-            
-            # LinkedIn post text limit is ~3000 chars, but keep it concise
-            if len(post_text) > 2000:
-                post_text = post_text[:1997] + "..."
-            
             if self.dry_run:
-                logger.info(f"[DRY RUN - LINKEDIN] Poll post:")
-                logger.info(f"  Text: {post_text[:200]}...")
+                logger.info(f"[DRY RUN - LINKEDIN]")
+                logger.info(f"  Post text: {post_text[:100]}...")
                 logger.info(f"  Poll question: {question}")
                 for i, opt in enumerate(options, 1):
                     logger.info(f"    {i}. {opt}")
@@ -462,40 +463,33 @@ class MultiPlatformPublisher:
                 )
                 return "DRY_RUN_LINKEDIN"
             
-            # Post to LinkedIn using the python-linkedin-v2 API
-            # Note: LinkedIn API for polls is complex and may require special permissions
-            # This is a simplified example - you may need to adjust based on API access
+            # ===== ACTUAL LINKEDIN POSTING =====
             
-            # IMPORTANT: LinkedIn's official API has restrictions on poll creation
-            # You may need to use LinkedIn's "Share API" with poll parameters
-            # Or consider using a LinkedIn automation tool
-            
-            # Placeholder for actual LinkedIn poll posting
-            # The linkedin_api library may not support polls directly
-            # You might need to use selenium or another method
-            
-            logger.warning("⚠️  LinkedIn poll posting requires manual implementation")
-            logger.warning("    LinkedIn API has restrictions on automated poll creation")
-            logger.info(f"    Would post: {post_text[:100]}...")
-            
-            # For now, post as regular text (without poll)
-            # Uncomment when you have proper LinkedIn API access:
-            # post_id = self.linkedin_client.submit_share(
-            #     comment=post_text,
-            #     visibility='PUBLIC'
-            # )
-            
-            post_id = "LINKEDIN_MANUAL_POST_NEEDED"
-            
-            self._save_post(
-                article_url, question, "linkedin", post_id, category, poll_type,
-                grounding_data.get('overall', 0.0),
-                grounding_data.get('semantic', 0.0),
-                grounding_data.get('entity', 0.0)
+            # Post using linkedin_api's submit_share method
+            response = self.linkedin_client.submit_share(
+                comment=post_text,
+                visibility='PUBLIC'
             )
             
-            return post_id
-            
+            if response:
+                # Extract post ID from response
+                post_id = response.get('updateKey', 'LINKEDIN_POST_SUCCESS')
+                logger.success(f"✅ LinkedIn post created - ID: {post_id}")
+                logger.info(f"  Q: {question}")
+                
+                # Save to database
+                self._save_post(
+                    article_url, question, "linkedin", post_id, category, poll_type,
+                    grounding_data.get('overall', 0.0),
+                    grounding_data.get('semantic', 0.0),
+                    grounding_data.get('entity', 0.0)
+                )
+                
+                return post_id
+            else:
+                logger.error(f"❌ LinkedIn posting failed: No response")
+                return None
+                
         except Exception as e:
             logger.error(f"❌ LinkedIn posting failed: {e}")
             import traceback
