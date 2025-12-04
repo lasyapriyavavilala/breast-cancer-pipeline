@@ -482,7 +482,7 @@ class MultiPlatformPublisher:
             # ===== POST TO PERSONAL LINKEDIN PROFILE =====
             
             # Use linkedin-api to post
-            response = self.linkedin_client.post(post_text)
+            response = self.linkedin_client.add_post(post_text)
             
             if response:
                 post_id = "LINKEDIN_PERSONAL_POST_SUCCESS"
