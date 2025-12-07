@@ -44,6 +44,7 @@ jobs:
             --grounding-threshold 0.60 \
             --post-polls \
             --post-limit 10 \
+            ----post-interval 1 \
             --no-dry-run
       
       - name: Upload artifacts
