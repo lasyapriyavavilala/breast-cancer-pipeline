@@ -318,7 +318,7 @@ Agent 4 automatically removes duplicate questions using:
 
 ### Check Posts
 
-- **Twitter:** [Your Twitter Profile](https://twitter.com/lasyavavilala15)
+- **Twitter:** [Twitter Profile](https://twitter.com/lasyavavilala15)
 - **Database:** `data/pharma_news.db`
 - **Logs:** GitHub Actions → Workflow runs
 
