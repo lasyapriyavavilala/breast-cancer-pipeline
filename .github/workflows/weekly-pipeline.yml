@@ -1,9 +1,10 @@
-name: Weekly Breast Cancer News Pipeline - UPDATED for Agent 5
+name: Weekly Breast Cancer Pipeline
 
 on:
   schedule:
-    - cron: '0 9 * * 0'  # Every Sunday at 9 AM UTC
-  workflow_dispatch:  # Allow manual trigger
+    # Run every Sunday at 8 AM UTC (3 AM EST)
+    - cron: '0 8 * * 0'
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   run-pipeline:
@@ -11,202 +12,47 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip'
       
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # NEW: Install LinkedIn API
-          pip install linkedin-api
       
-      - name: Setup Chrome and ChromeDriver
-        run: |
-          # Install Chrome
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          
-          # Get Chrome version
-          CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d '.' -f 1)
-          echo "Chrome version: $CHROME_VERSION"
-          
-          # Install matching ChromeDriver
-          CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}")
-          echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
-          
-          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip"
-          unzip chromedriver-linux64.zip
-          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
-          sudo chmod +x /usr/local/bin/chromedriver
-          
-          # Verify installation
-          which chromedriver
-          chromedriver --version
-      
-      - name: Create directories
-        run: |
-          mkdir -p data/raw data/processed data/outputs data/embeddings logs
-          echo "Directory structure created"
-          ls -la data/
-      
-      - name: Verify CSV files exist
-        run: |
-          echo "Checking for CSV files in repository..."
-          if [ ! -f "pharma_urls.csv" ]; then
-            echo "❌ ERROR: pharma_urls.csv not found in repository root!"
-            exit 1
-          fi
-          if [ ! -f "keywords.csv" ]; then
-            echo "❌ ERROR: keywords.csv not found in repository root!"
-            exit 1
-          fi
-          echo "✅ CSV files found:"
-          ls -lh *.csv
-      
-      # ==================== UPDATED: Run pipeline with new Agent 5 parameters ====================
-      - name: Run pipeline with grounding filtering + LinkedIn support
+      - name: Run pipeline
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Twitter credentials
           TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
           TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
           TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
           TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
-          # NEW: LinkedIn credentials
-          LINKEDIN_EMAIL: ${{ secrets.LINKEDIN_EMAIL }}
-          LINKEDIN_PASSWORD: ${{ secrets.LINKEDIN_PASSWORD }}
+          
+          # Groq API for LLM
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          
         run: |
           python run_pipeline.py \
-            --target 10 \
+            --target 5 \
             --days-back 7 \
             --polls-per-article 2 \
-            --grounding-threshold 0.6 \
-            --enable-twitter \
-            --enable-linkedin \
+            --grounding-threshold 0.60 \
             --post-polls \
-            --post-limit 5 \
-            --post-interval 3 \
-            --no-dry-run \
-            2>&1 | tee logs/pipeline_$(date +%Y%m%d_%H%M%S).log
+            --post-limit 10 \
+            --no-dry-run
       
-      # ===== UPLOAD AGENT 1 OUTPUT =====
-      - name: Upload Agent 1 - Scraped Articles
+      - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: 01-agent1-scraped-articles
-          path: data/raw/scraped_articles_*.json
-          retention-days: 30
-      
-      # ===== UPLOAD AGENT 2 OUTPUT =====
-      - name: Upload Agent 2 - Enhanced Articles (with entities)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 02-agent2-enhanced-articles
+          name: pipeline-outputs
           path: |
-            data/processed/enhanced_articles.json
-            data/processed/enhanced_articles.ndjson
-          retention-days: 30
-      
-      # ===== UPLOAD AGENT 3 OUTPUT =====
-      - name: Upload Agent 3 - Categorized Articles
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 03-agent3-categorized-articles
-          path: data/processed/categorized_articles.json
-          retention-days: 30
-      
-      # ===== UPLOAD AGENT 4 OUTPUT =====
-      - name: Upload Agent 4 - Generated Polls
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 04-agent4-generated-polls
-          path: data/outputs/twitter_polls.json
-          retention-days: 30
-      
-      # ===== UPLOAD AGENT 5 OUTPUT =====
-      - name: Upload Agent 5 - Database (posted polls tracker)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 05-agent5-database
-          path: data/pharma_news.db
-          retention-days: 30
-      
-      # ===== UPLOAD ALL LOGS =====
-      - name: Upload Complete Pipeline Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 00-complete-logs
-          path: logs/*.log
-          retention-days: 30
-      
-      # ===== UPDATED SUMMARY REPORT =====
-      - name: Generate Pipeline Summary
-        if: always()
-        run: |
-          echo "# Pipeline Execution Summary" > pipeline_summary.md
-          echo "" >> pipeline_summary.md
-          echo "**Date:** $(date)" >> pipeline_summary.md
-          echo "" >> pipeline_summary.md
-          
-          if [ -f "data/raw/scraped_articles_"*.json ]; then
-            ARTICLE_COUNT=$(python -c "import json; print(len(json.load(open(list(__import__('pathlib').Path('data/raw').glob('scraped_articles_*.json'))[0]))))" 2>/dev/null || echo "0")
-            echo "- **Agent 1 (Scraper):** $ARTICLE_COUNT articles scraped" >> pipeline_summary.md
-          fi
-          
-          if [ -f "data/processed/enhanced_articles.json" ]; then
-            ENHANCED_COUNT=$(python -c "import json; print(len(json.load(open('data/processed/enhanced_articles.json'))))" 2>/dev/null || echo "0")
-            echo "- **Agent 2 (Extraction):** $ENHANCED_COUNT articles enhanced" >> pipeline_summary.md
-          fi
-          
-          if [ -f "data/processed/categorized_articles.json" ]; then
-            CATEGORIZED_COUNT=$(python -c "import json; print(len(json.load(open('data/processed/categorized_articles.json'))))" 2>/dev/null || echo "0")
-            echo "- **Agent 3 (Categorization):** $CATEGORIZED_COUNT articles categorized" >> pipeline_summary.md
-          fi
-          
-          if [ -f "data/outputs/twitter_polls.json" ]; then
-            POLLS_COUNT=$(python -c "import json; print(len(json.load(open('data/outputs/twitter_polls.json'))))" 2>/dev/null || echo "0")
-            echo "- **Agent 4 (Polls):** $POLLS_COUNT polls generated" >> pipeline_summary.md
-            
-            # NEW: Show grounding stats
-            ABOVE_THRESHOLD=$(python -c "import json; polls=json.load(open('data/outputs/twitter_polls.json')); print(sum(1 for p in polls if p.get('grounding_score',{}).get('overall',0)>=0.75))" 2>/dev/null || echo "0")
-            BELOW_THRESHOLD=$(python -c "import json; polls=json.load(open('data/outputs/twitter_polls.json')); print(sum(1 for p in polls if p.get('grounding_score',{}).get('overall',0)<0.75))" 2>/dev/null || echo "0")
-            echo "  - Above threshold (0.75): $ABOVE_THRESHOLD" >> pipeline_summary.md
-            echo "  - Below threshold: $BELOW_THRESHOLD" >> pipeline_summary.md
-          fi
-          
-          # NEW: Show posting stats from database
-          if [ -f "data/pharma_news.db" ]; then
-            TWITTER_POSTS=$(sqlite3 data/pharma_news.db "SELECT COUNT(*) FROM posts WHERE platform='twitter' AND post_id IS NOT NULL;" 2>/dev/null || echo "0")
-            LINKEDIN_POSTS=$(sqlite3 data/pharma_news.db "SELECT COUNT(*) FROM posts WHERE platform='linkedin' AND post_id IS NOT NULL;" 2>/dev/null || echo "0")
-            echo "- **Agent 5 (Publisher):**" >> pipeline_summary.md
-            echo "  - Twitter posts: $TWITTER_POSTS" >> pipeline_summary.md
-            echo "  - LinkedIn posts: $LINKEDIN_POSTS" >> pipeline_summary.md
-          fi
-          
-          echo "" >> pipeline_summary.md
-          echo "**Status:** ✅ Pipeline completed successfully" >> pipeline_summary.md
-          
-          cat pipeline_summary.md
-      
-      - name: Upload Pipeline Summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 06-pipeline-summary
-          path: pipeline_summary.md
+            data/raw/*.json
+            data/processed/*.json
+            data/outputs/*.json
           retention-days: 30
