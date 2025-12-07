@@ -1,7 +1,7 @@
 """
-Complete Integrated Pipeline Runner
+Complete Integrated Pipeline Runner - Twitter Only
 Runs all 5 agents sequentially with proper path handling for Windows
-Agent 1: StandaloneScraper → Agent 2: Entities → Agent 3: Categorization → Agent 4: Polls → Agent 5: Publisher
+Agent 1: StandaloneScraper → Agent 2: Entities → Agent 3: Categorization → Agent 4: Polls → Agent 5: Twitter Publisher
 """
 
 import os
@@ -15,7 +15,7 @@ from typing import Optional, List, Dict
 from loguru import logger
 from dotenv import load_dotenv
 
-# FIXED: Import from agents folder with correct filename
+# Import from agents folder
 try:
     from agents.agent1_scraper import StandaloneScraper
 except ImportError:
@@ -41,11 +41,10 @@ except ImportError:
     PollGenerator = None
 
 try:
-    from agents.agent5_publisher import MultiPlatformPublisher
-
+    from agents.agent5_publisher import TwitterPublisher
 except ImportError:
     logger.warning("agent5_publisher.py not found in agents directory")
-    MultiPlatformPublisher = None
+    TwitterPublisher = None
 
 
 class IntegratedPipelineRunner:
@@ -55,15 +54,13 @@ class IntegratedPipelineRunner:
         self,
         base_dir: str = None,
         target_articles: int = 50,
-        days_back: int = 7,  # FIXED: Changed default from 90 to 7
+        days_back: int = 7,
         polls_per_article: int = 3,
         post_polls: bool = False,
         post_limit: Optional[int] = None,
         post_interval: int = 3,
         dry_run: bool = True,
-        grounding_threshold: float = 0.75,
-        enable_twitter: bool = True,
-        enable_linkedin: bool = True,
+        grounding_threshold: float = 0.60,
     ):
         # Use current working directory if not specified (works on Windows & Linux)
         if base_dir is None:
@@ -79,8 +76,6 @@ class IntegratedPipelineRunner:
         self.post_interval = post_interval
         self.dry_run = dry_run
         self.grounding_threshold = grounding_threshold
-        self.enable_twitter = enable_twitter
-        self.enable_linkedin = enable_linkedin
         
         # Setup directory structure
         self.data_dir = self.base_dir / "data"
@@ -100,7 +95,7 @@ class IntegratedPipelineRunner:
         self.polls_file = None
         
         logger.info("="*70)
-        logger.info("INTEGRATED PIPELINE INITIALIZED")
+        logger.info("INTEGRATED PIPELINE INITIALIZED - TWITTER ONLY")
         logger.info("="*70)
         logger.info(f"Base directory: {self.base_dir}")
         logger.info(f"Target articles: {target_articles}")
@@ -108,8 +103,7 @@ class IntegratedPipelineRunner:
         logger.info(f"Polls per article: {polls_per_article}")
         logger.info(f"Dry run: {dry_run}")
         logger.info(f"Grounding threshold: {grounding_threshold}")
-        logger.info(f"Twitter enabled: {enable_twitter}")
-        logger.info(f"LinkedIn enabled: {enable_linkedin}")
+        logger.info(f"Platform: Twitter only")
     
     def run_agent1_scraper(self) -> str:
         """Agent 1: StandaloneScraper - Multi-source news scraping"""
@@ -120,8 +114,7 @@ class IntegratedPipelineRunner:
         if StandaloneScraper is None:
             raise ImportError("StandaloneScraper not found. Please ensure standalone_scraper_fixed.py is in the agents directory.")
         
-        # FIXED: Look for CSV files in multiple locations
-        # Priority: data/ → root directory
+        # Look for CSV files in multiple locations
         urls_csv = self.data_dir / "pharma_urls.csv"
         keywords_csv = self.data_dir / "keywords.csv"
         
@@ -325,34 +318,31 @@ class IntegratedPipelineRunner:
         logger.info("AGENT 5: TWITTER/X PUBLISHER")
         logger.info("="*70)
         
-        if MultiPlatformPublisher is None:
-            raise ImportError("MultiPlatformPublisher not found. Please ensure agent5_publisher.py is in the agents directory.")
+        if TwitterPublisher is None:
+            raise ImportError("TwitterPublisher not found. Please ensure agent5_publisher.py is in the agents directory.")
     
         if not self.post_polls:
             logger.info("⏭️  Skipping Agent 5 (posting disabled)")
             logger.info("💡 Use --post-polls flag to enable posting")
-            return {"posted_twitter": 0, "posted_linkedin": 0, "skipped_threshold": 0, "skipped_rate_limit": 0, "failed": 0, "total": 0}
+            return {"posted": 0, "skipped_threshold": 0, "skipped_rate_limit": 0, "failed": 0, "total": 0}
         
         if not self.polls_file:
             raise ValueError("Agent 4 must run first. No polls file found.")
-        logger.info(f"📤 Initializing multi-platform publisher")
-        logger.info(f"   🎯 Grounding threshold: {self.grounding_threshold}")
-        logger.info(f"   🐦 Twitter: {'Enabled' if self.enable_twitter else 'Disabled'}")
-        logger.info(f"   💼 LinkedIn: {'Enabled' if self.enable_linkedin else 'Disabled'}")
-        logger.info(f"   🧪 Dry run: {self.dry_run}")
-    
         
+        logger.info(f"📤 Initializing Twitter publisher")
+        logger.info(f"   🎯 Grounding threshold: {self.grounding_threshold}")
+        logger.info(f"   🐦 Platform: Twitter only")
+        logger.info(f"   🧪 Dry run: {self.dry_run}")
         
         # Initialize publisher
-        publisher = MultiPlatformPublisher(
+        publisher = TwitterPublisher(
             db_path=str(self.data_dir / "pharma_news.db"),
-            grounding_threshold=self.grounding_threshold,  # NEW
-            enable_twitter=self.enable_twitter,            # NEW
-            enable_linkedin=self.enable_linkedin,          # NEW
+            grounding_threshold=self.grounding_threshold,
             dry_run=self.dry_run,
             post_interval_minutes=self.post_interval,
             max_posts_per_day=20
-    )
+        )
+        
         # Load polls
         logger.info(f"📂 Loading polls from {self.polls_file}")
         with open(self.polls_file, 'r', encoding='utf-8') as f:
@@ -360,7 +350,7 @@ class IntegratedPipelineRunner:
     
         logger.info(f"📊 Total polls available: {len(polls)}")
     
-        # NEW: Show grounding distribution
+        # Show grounding distribution
         above_threshold = sum(1 for p in polls if p.get('grounding_score', {}).get('overall', 0) >= self.grounding_threshold)
         below_threshold = len(polls) - above_threshold
         logger.info(f"   ✅ Above threshold ({self.grounding_threshold}): {above_threshold}")
@@ -379,8 +369,7 @@ class IntegratedPipelineRunner:
         )
         
         logger.success(f"✅ Agent 5 complete:")
-        logger.info(f"   🐦 Twitter: {summary['posted_twitter']} polls")
-        logger.info(f"   💼 LinkedIn: {summary['posted_linkedin']} polls")
+        logger.info(f"   🐦 Twitter: {summary['posted']} polls")
         logger.info(f"   ⏭️  Skipped (threshold): {summary['skipped_threshold']}")
         logger.info(f"   ⏭️  Skipped (rate limit): {summary['skipped_rate_limit']}")
         logger.info(f"   ❌ Failed: {summary['failed']}")
@@ -448,7 +437,7 @@ class IntegratedPipelineRunner:
         
         # Agent 5
         if self.post_polls:
-            summary_data.append(f"Agent 5 (Publisher):      {'Dry run' if self.dry_run else 'Live posting'}")
+            summary_data.append(f"Agent 5 (Publisher):      {'Dry run' if self.dry_run else 'Live posting - Twitter'}")
         
         for line in summary_data:
             logger.info(line)
@@ -476,7 +465,7 @@ def main():
     load_dotenv()
     
     parser = argparse.ArgumentParser(
-        description="Integrated 5-Agent Pipeline for Breast Cancer News Processing",
+        description="Integrated 5-Agent Pipeline for Breast Cancer News Processing - Twitter Only",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -484,40 +473,34 @@ Examples:
   python run_pipeline.py --target 10 --days-back 7 --post-polls --no-dry-run
   
   # Strict quality control
-  python run_pipeline.py --target 10 --grounding-threshold 0.85 --post-polls --no-dry-run
+  python run_pipeline.py --target 10 --grounding-threshold 0.75 --post-polls --no-dry-run
   
-  # Twitter only (disable LinkedIn)
-  python run_pipeline.py --target 10 --disable-linkedin --post-polls --no-dry-run
+  # Test with existing polls (skip agents 1-3)
+  python run_pipeline.py --skip-agent1 --skip-agent2 --skip-agent3 --post-polls --no-dry-run
         """
     )
+    
     # Core options
     parser.add_argument("--base-dir", default=None,
-                    help="Base directory for all data (default: current directory)")
+                        help="Base directory for all data (default: current directory)")
     parser.add_argument("--target", type=int, default=50,
                         help="Number of articles to scrape (default: 50)")
-    parser.add_argument("--days-back", type=int, default=7,  # FIXED: Changed default from 90 to 7
+    parser.add_argument("--days-back", type=int, default=7,
                         help="Days to look back (default: 7)")
     parser.add_argument("--polls-per-article", type=int, default=3,
                         help="Polls to generate per article (default: 3)")
     
     # Publishing options
-    parser.add_argument("--post-polls", action="store_true", help="Post polls to platforms")
+    parser.add_argument("--post-polls", action="store_true", help="Post polls to Twitter")
     parser.add_argument("--post-limit", type=int, help="Limit number of polls to post")
     parser.add_argument("--post-interval", type=int, default=3, help="Minutes between posts")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Dry run mode")
     parser.add_argument("--no-dry-run", action="store_false", dest="dry_run", help="Actually post")
     
-    # NEW: Agent 5 options
-    parser.add_argument("--grounding-threshold", type=float, default=0.75,
-                        help="Minimum grounding score to post (default: 0.75)")
-    parser.add_argument("--disable-twitter", action="store_false", dest="enable_twitter",
-                        help="Disable Twitter posting")
-    parser.add_argument("--disable-linkedin", action="store_false", dest="enable_linkedin",
-                        help="Disable LinkedIn posting")
-    parser.add_argument("--enable-twitter", action="store_true", default=True,
-                        help="Enable Twitter posting (default: True)")
-    parser.add_argument("--enable-linkedin", action="store_true", default=True,
-                        help="Enable LinkedIn posting (default: True)")
+    # Grounding threshold
+    parser.add_argument("--grounding-threshold", type=float, default=0.60,
+                        help="Minimum grounding score to post (default: 0.60)")
+    
     # Agent skip options
     parser.add_argument("--skip-agent1", action="store_true",
                         help="Skip scraping (use existing data)")
@@ -542,9 +525,7 @@ Examples:
         post_limit=args.post_limit,
         post_interval=args.post_interval,
         dry_run=args.dry_run,
-        grounding_threshold=args.grounding_threshold,  # NEW
-        enable_twitter=args.enable_twitter,            # NEW
-        enable_linkedin=args.enable_linkedin           # NEW
+        grounding_threshold=args.grounding_threshold
     )
     
     # Run pipeline
