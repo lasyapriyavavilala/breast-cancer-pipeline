@@ -38,12 +38,12 @@ jobs:
           
         run: |
           python run_pipeline.py \
-            --target 100 \
+            --target 70 \
             --days-back 7 \
             --polls-per-article 2 \
             --grounding-threshold 0.60 \
             --post-polls \
-            --post-limit 10 \
+            --post-limit 15 \
             --post-interval 1 \
             --no-dry-run
       
