@@ -38,7 +38,7 @@ jobs:
           
         run: |
           python run_pipeline.py \
-            --target 5 \
+            --target 100 \
             --days-back 7 \
             --polls-per-article 2 \
             --grounding-threshold 0.60 \
