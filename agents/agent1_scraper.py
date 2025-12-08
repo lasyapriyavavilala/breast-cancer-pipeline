@@ -1,6 +1,7 @@
 """
 Standalone Multi-Source Breast Cancer News Scraper - FIXED VERSION
-Focus: Breast cancer only, last 7 days
+Focus: Breast cancer only, configurable time window
+ALL ERRORS CORRECTED
 """
 
 import os
@@ -32,7 +33,7 @@ from dotenv import load_dotenv
 class StandaloneScraper:
     """
     Complete standalone scraper for breast cancer news
-    FIXED: Strict breast cancer filtering + 7-day window
+    FIXED: All errors corrected, proper indentation, no duplicates
     """
     
     USER_AGENTS = [
@@ -41,96 +42,100 @@ class StandaloneScraper:
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     ]
     
-    def __init__(self, urls_csv: str, keywords_csv: str, days_back: int = 7,  # FIXED: Default to 7 days
-             target_articles: int = 50, output_dir: str = "output"):
-            
-            """
-            Initialize scraper with CSV files.
-            
-            CSV Format (flexible - handles extra columns):
-            Required columns: url, source_name, source_type, priority
-            Optional columns: tier, category, notes (will be ignored)
-            """
-            self.days_back = days_back
-            self.target_articles = target_articles
-            self.output_dir = output_dir
-            
-            # Load sources - UPDATED to handle extra columns
-            try:
-                self.sources_df = pd.read_csv(urls_csv)
-                
-                # Validate required columns exist
-                required_cols = ['url', 'source_name', 'source_type', 'priority']
-                missing_cols = [col for col in required_cols if col not in self.sources_df.columns]
-                
-                if missing_cols:
-                    raise ValueError(f"Missing required columns in {urls_csv}: {missing_cols}")
-                
-                # Keep only required columns (ignore tier, category, notes)
-                self.sources_df = self.sources_df[required_cols]
-                
-                # Sort by priority
-                self.sources_df = self.sources_df.sort_values('priority', ascending=False)
-                
-                logger.info(f"Loaded {len(self.sources_df)} sources from {urls_csv}")
-                
-            except Exception as e:
-                logger.error(f"Failed to load URLs CSV: {e}")
-                raise
-            
-            # Load keywords
-            try:
-                keywords_df = pd.read_csv(keywords_csv)
-                self.keywords = keywords_df['keyword'].str.lower().tolist()
-                
-                # FIXED: Create breast cancer specific keywords
-                self.breast_cancer_keywords = [
-                    'breast cancer', 'breast carcinoma', 'mammary carcinoma',
-                    'her2', 'her2+', 'her2-positive', 'her2-negative', 'her2-low',
-                    'tnbc', 'triple negative breast cancer', 'triple-negative breast',
-                    'hormone receptor positive', 'hr+', 'er+', 'pr+',
-                    'metastatic breast', 'early breast cancer', 'advanced breast cancer',
-                    'breast tumor', 'breast tumour', 'mammary tumor'
-                ]
-                
-                logger.info(f"Loaded {len(self.keywords)} keywords")
-                logger.info(f"Using {len(self.breast_cancer_keywords)} strict breast cancer keywords")
-            except Exception as e:
-                logger.error(f"Failed to load keywords CSV: {e}")
-                raise
-            
-            # Rest of initialization...
-            self.cutoff_date = datetime.now() - timedelta(days=days_back)
-            self.articles = []
-            self.driver = None
-            
-            # Stats
-            self.stats = {
-                'total_scraped': 0,
-                'by_source': {},
-                'by_type': {'rss': 0, 'api': 0, 'scrape': 0},
-                'filtered_out': {
-                    'no_breast_cancer': 0,
-                    'too_old': 0,
-                    'too_short': 0,
-                    'junk_page': 0
-                }
-            }
-            
-            Path(output_dir).mkdir(parents=True, exist_ok=True)
-            logger.info(f"Scraper initialized: target={target_articles}, days_back={days_back}")
-            logger.info(f"Date cutoff: {self.cutoff_date.strftime('%Y-%m-%d')}")
-
-            
-    def _load_keywords(self, keywords_csv: str) -> List[str]:
-        """Load keywords from CSV"""
+    def __init__(self, urls_csv: str, keywords_csv: str, days_back: int = 7,
+                 target_articles: int = 50, output_dir: str = "output"):
+        """
+        Initialize scraper with CSV files.
+        
+        Args:
+            urls_csv: Path to URLs CSV (columns: url, source_name, source_type, priority)
+            keywords_csv: Path to keywords CSV (column: keyword)
+            days_back: Days to look back (default: 7)
+            target_articles: Target number of articles (default: 50)
+            output_dir: Output directory (default: "output")
+        """
+        self.days_back = days_back
+        self.target_articles = target_articles
+        self.output_dir = output_dir
+        
+        # Load sources
         try:
-            df = pd.read_csv(keywords_csv)
-            keywords = df['keyword'].dropna().str.lower().tolist()
-            return keywords
+            self.sources_df = pd.read_csv(urls_csv)
+            
+            # Validate required columns exist
+            required_cols = ['url', 'source_name', 'source_type', 'priority']
+            missing_cols = [col for col in required_cols if col not in self.sources_df.columns]
+            
+            if missing_cols:
+                raise ValueError(f"Missing required columns in {urls_csv}: {missing_cols}")
+            
+            # Keep only required columns (ignore tier, category, notes, etc.)
+            self.sources_df = self.sources_df[required_cols]
+            
+            # Sort by priority (highest first)
+            self.sources_df = self.sources_df.sort_values('priority', ascending=False)
+            
+            logger.info(f"Loaded {len(self.sources_df)} sources from {urls_csv}")
+            
         except Exception as e:
-            print(f"⚠️  Error loading keywords: {e}")
-            return ["breast cancer", "her2", "tnbc", "triple negative"]
+            logger.error(f"Failed to load URLs CSV: {e}")
+            raise
+        
+        # Load keywords
+        try:
+            keywords_df = pd.read_csv(keywords_csv)
+            
+            # Use keywords from CSV
+            csv_keywords = keywords_df['keyword'].str.lower().tolist()
+            
+            # Essential breast cancer keywords (hardcoded fallback)
+            essential_keywords = [
+                'breast cancer', 'breast carcinoma', 'mammary carcinoma',
+                'her2', 'her2+', 'her2-positive', 'her2-negative', 'her2-low',
+                'tnbc', 'triple negative breast cancer', 'triple-negative breast',
+                'hormone receptor positive', 'hr+', 'er+', 'pr+',
+                'metastatic breast', 'early breast cancer', 'advanced breast cancer',
+                'breast tumor', 'breast tumour', 'mammary tumor',
+                'enhertu', 'herceptin', 'perjeta', 'kadcyla', 'trodelvy',
+                'verzenio', 'ibrance', 'kisqali'
+            ]
+            
+            # Combine CSV keywords with essentials (no duplicates)
+            self.breast_cancer_keywords = list(set(csv_keywords + essential_keywords))
+            
+            logger.info(f"Loaded {len(csv_keywords)} keywords from CSV")
+            logger.info(f"Using {len(self.breast_cancer_keywords)} total breast cancer keywords")
+            
+        except Exception as e:
+            logger.error(f"Failed to load keywords CSV: {e}")
+            raise
+        
+        # Date cutoff
+        self.cutoff_date = datetime.now() - timedelta(days=days_back)
+        
+        # Storage
+        self.articles = []
+        self.driver = None
+        
+        # Statistics
+        self.stats = {
+            'total_scraped': 0,
+            'by_source': {},
+            'by_type': {'rss': 0, 'api': 0, 'scrape': 0},
+            'filtered_out': {
+                'no_breast_cancer': 0,
+                'too_old': 0,
+                'too_short': 0,
+                'junk_page': 0,
+                'no_date': 0
+            }
+        }
+        
+        # Create output directory
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Scraper initialized: target={target_articles}, days_back={days_back}")
+        logger.info(f"Date cutoff: {self.cutoff_date.strftime('%Y-%m-%d')}")
     
     def _setup_driver(self) -> webdriver.Chrome:
         """Setup headless Chrome with stealth mode - GitHub Actions compatible"""
@@ -178,50 +183,64 @@ class StandaloneScraper:
         
         driver.set_page_load_timeout(30)
         return driver
-            
+    
     def scrape_all(self) -> List[Dict]:
         """Main scraping method - handles all source types"""
         
         print("\n" + "=" * 70)
-        print("🔍 STARTING MULTI-SOURCE SCRAPE (BREAST CANCER ONLY, LAST 7 DAYS)")
+        print(f"🔍 STARTING MULTI-SOURCE SCRAPE (BREAST CANCER, LAST {self.days_back} DAYS)")
         print("=" * 70)
         
-        for idx, source in self.sources_df.iterrows():
-            if len(self.articles) >= self.target_articles:
-                print(f"\n✅ Target of {self.target_articles} articles reached!")
-                break
+        try:
+            for idx, source in self.sources_df.iterrows():
+                if len(self.articles) >= self.target_articles:
+                    print(f"\n✅ Target of {self.target_articles} articles reached!")
+                    break
+                
+                source_name = source['source_name']
+                source_type = source['source_type']
+                url = source['url']
+                priority = source['priority']
+                
+                print(f"\n[Priority {priority}] {source_name} ({source_type})")
+                print(f"   URL: {url}")
+                
+                try:
+                    if source_type == 'rss':
+                        results = self._scrape_rss(url, source_name)
+                    elif source_type == 'api':
+                        results = self._scrape_api(url, source_name)
+                    else:  # scrape
+                        results = self._scrape_website(url, source_name)
+                    
+                    # Filter by keywords and date
+                    filtered = self._filter_articles(results)
+                    self.articles.extend(filtered)
+                    
+                    print(f"   ✓ Found {len(filtered)} relevant articles (Total: {len(self.articles)}/{self.target_articles})")
+                    
+                    # Rate limiting
+                    time.sleep(random.uniform(1, 3))
+                    
+                except Exception as e:
+                    print(f"   ✗ Error: {e}")
             
-            source_name = source['source_name']
-            source_type = source['source_type']
-            url = source['url']
-            priority = source['priority']
+            print("\n" + "=" * 70)
+            print(f"✅ SCRAPING COMPLETE: {len(self.articles)} articles collected")
+            print("=" * 70)
             
-            print(f"\n[Priority {priority}] {source_name} ({source_type})")
-            print(f"   URL: {url}")
-            
-            try:
-                if source_type == 'rss':
-                    results = self._scrape_rss(url, source_name)
-                elif source_type == 'api':
-                    results = self._scrape_api(url, source_name)
-                else:  # scrape
-                    results = self._scrape_website(url, source_name)
-                
-                # Filter by keywords and date
-                filtered = self._filter_articles(results)
-                self.articles.extend(filtered)
-                
-                print(f"   ✓ Found {len(filtered)} relevant articles (Total: {len(self.articles)}/{self.target_articles})")
-                
-                # Rate limiting
-                time.sleep(random.uniform(1, 3))
-                
-            except Exception as e:
-                print(f"   ✗ Error: {e}")
+        except Exception as e:
+            logger.error(f"Scraping failed: {e}")
+            raise
         
-        print("\n" + "=" * 70)
-        print(f"✅ SCRAPING COMPLETE: {len(self.articles)} articles collected")
-        print("=" * 70)
+        finally:
+            # Always cleanup driver
+            if self.driver:
+                try:
+                    self.driver.quit()
+                    logger.info("Browser closed")
+                except:
+                    pass
         
         return self.articles
     
@@ -245,10 +264,10 @@ class StandaloneScraper:
                 article = {
                     'source': source_name,
                     'url': entry.get('link', ''),
-                    'title': entry.get('title', ''),
+                    'headline': entry.get('title', ''),
                     'content': entry.get('summary', entry.get('description', '')),
-                    'publication_date': pub_date.strftime('%Y-%m-%d') if pub_date else None,
-                    'content_type': 'rss',
+                    'date': pub_date.strftime('%Y-%m-%d') if pub_date else None,
+                    'content_type': 'html',
                     'scraped_at': datetime.now().isoformat()
                 }
                 
@@ -272,15 +291,14 @@ class StandaloneScraper:
         return []
     
     def _scrape_clinicaltrials(self) -> List[Dict]:
-        """Scrape ClinicalTrials.gov API - FIXED for breast cancer only"""
+        """Scrape ClinicalTrials.gov API"""
         articles = []
         
         try:
             url = "https://clinicaltrials.gov/api/v2/studies"
             
-            # FIXED: More specific breast cancer query
             params = {
-                "query.cond": "Breast Cancer",  # Primary condition
+                "query.cond": "Breast Cancer",
                 "query.intr": "Drug",
                 "filter.lastUpdatePostDate": f"{(datetime.now() - timedelta(days=self.days_back)).strftime('%Y-%m-%d')},{datetime.now().strftime('%Y-%m-%d')}",
                 "pageSize": 20,
@@ -302,10 +320,10 @@ class StandaloneScraper:
                 article = {
                     'source': 'ClinicalTrials.gov',
                     'url': f"https://clinicaltrials.gov/study/{nct_id}",
-                    'title': ident.get('briefTitle', ''),
+                    'headline': ident.get('briefTitle', ''),
                     'content': desc.get('briefSummary', ''),
-                    'publication_date': status.get('lastUpdatePostDate', ''),
-                    'content_type': 'clinical_trial',
+                    'date': status.get('lastUpdatePostDate', ''),
+                    'content_type': 'html',
                     'scraped_at': datetime.now().isoformat()
                 }
                 
@@ -319,11 +337,7 @@ class StandaloneScraper:
     def _scrape_preprints(self, url: str, source_name: str) -> List[Dict]:
         """Scrape preprint servers (medRxiv, bioRxiv)"""
         articles = []
-        
-        # This would require specific API implementation
-        # Placeholder for now
         print(f"   Preprint scraping not yet implemented for {source_name}")
-        
         return articles
     
     # ==================== WEB SCRAPING ====================
@@ -351,7 +365,7 @@ class StandaloneScraper:
             links = self._find_article_links(soup, url)
             
             # Extract content from each link (limit to avoid timeouts)
-            for link in links[:5]:  # Limit per source
+            for link in links[:5]:
                 if len(articles) >= 5:
                     break
                 
@@ -361,9 +375,9 @@ class StandaloneScraper:
                     article = {
                         'source': source_name,
                         'url': link['url'],
-                        'title': link['title'],
+                        'headline': link['title'],
                         'content': content,
-                        'publication_date': pub_date.strftime('%Y-%m-%d') if pub_date else None,
+                        'date': pub_date.strftime('%Y-%m-%d') if pub_date else None,
                         'content_type': link['type'],
                         'scraped_at': datetime.now().isoformat()
                     }
@@ -377,7 +391,7 @@ class StandaloneScraper:
         return articles
     
     def _find_article_links(self, soup: BeautifulSoup, base_url: str) -> List[Dict]:
-        """Find article links on a page - FIXED for breast cancer focus"""
+        """Find article links on a page"""
         links = []
         seen = set()
         domain = urlparse(base_url).netloc
@@ -387,9 +401,8 @@ class StandaloneScraper:
             text = a.get_text(strip=True).lower()
             title_attr = a.get('title', '').lower()
             
-            # FIXED: Check for breast cancer keywords specifically
+            # Check for breast cancer keywords
             combined_text = text + ' ' + title_attr
-            
             has_breast_cancer = any(kw in combined_text for kw in self.breast_cancer_keywords)
             
             if not has_breast_cancer:
@@ -481,8 +494,7 @@ class StandaloneScraper:
             datetime_attr = time_tag.get('datetime')
             if datetime_attr:
                 try:
-                    # Handle various ISO formats
-                    date_str = datetime_attr[:10]  # Get YYYY-MM-DD
+                    date_str = datetime_attr[:10]
                     return datetime.fromisoformat(date_str)
                 except:
                     pass
@@ -499,9 +511,9 @@ class StandaloneScraper:
         
         # Try regex patterns
         patterns = [
-            r'(\d{4}-\d{2}-\d{2})',  # YYYY-MM-DD
-            r'(\w+ \d{1,2},? \d{4})',  # Month DD, YYYY
-            r'(\d{1,2} \w+ \d{4})'  # DD Month YYYY
+            r'(\d{4}-\d{2}-\d{2})',
+            r'(\w+ \d{1,2},? \d{4})',
+            r'(\d{1,2} \w+ \d{4})'
         ]
         
         for pattern in patterns:
@@ -509,7 +521,6 @@ class StandaloneScraper:
             if match:
                 try:
                     date_str = match.group(1).replace(',', '')
-                    # Try different formats
                     for fmt in ['%Y-%m-%d', '%B %d %Y', '%d %B %Y']:
                         try:
                             return datetime.strptime(date_str, fmt)
@@ -532,7 +543,7 @@ class StandaloneScraper:
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, text[:2000])  # Check first 2000 chars
+            match = re.search(pattern, text[:2000])
             if match:
                 try:
                     date_str = match.group(1).replace(',', '')
@@ -546,11 +557,11 @@ class StandaloneScraper:
         
         return None
     
-    # ==================== FILTERING (FIXED) ====================
+    # ==================== FILTERING (STRICT) ====================
     
     def _filter_articles(self, articles: List[Dict]) -> List[Dict]:
         """
-        FIXED: Strict filtering for breast cancer articles from last 7 days
+        Strict filtering for breast cancer articles within time window
         """
         filtered = []
         
@@ -564,7 +575,7 @@ class StandaloneScraper:
         
         for article in articles:
             content = article.get('content', '')
-            title = article.get('title', '')
+            title = article.get('headline', '')
             text_lower = (title + ' ' + content).lower()
             
             # 1. Check content length
@@ -577,26 +588,23 @@ class StandaloneScraper:
                 self.stats['filtered_out']['junk_page'] += 1
                 continue
             
-            # 3. FIXED: Strict breast cancer check - TITLE must contain breast cancer keywords
+            # 3. Strict breast cancer check
             title_lower = title.lower()
             has_breast_cancer_in_title = any(kw in title_lower for kw in self.breast_cancer_keywords)
             
-            # Alternative: Content can have breast cancer if title has cancer-related terms
             has_cancer_in_title = 'cancer' in title_lower or 'tumor' in title_lower or 'carcinoma' in title_lower
             has_breast_in_content = any(kw in text_lower for kw in self.breast_cancer_keywords)
             
-            # STRICT RULE: Either title has breast cancer OR (title has cancer AND content has breast cancer)
             if not (has_breast_cancer_in_title or (has_cancer_in_title and has_breast_in_content)):
                 self.stats['filtered_out']['no_breast_cancer'] += 1
                 continue
             
-            # 4. FIXED: Strict date check - reject if no date or outside window
-            pub_date_str = article.get('publication_date')
+            # 4. FIXED: Strict date check - reject if no date
+            pub_date_str = article.get('date')
             if not pub_date_str:
-                # Try to get current date for very recent articles
-                pub_date_str = datetime.now().strftime('%Y-%m-%d')
-                article['publication_date'] = pub_date_str
-                print(f"      ⚠️  No date found, using today: {title[:50]}")
+                self.stats['filtered_out']['no_date'] += 1
+                print(f"      ❌ No date, rejecting: {title[:50]}")
+                continue
             
             try:
                 pub_date = datetime.fromisoformat(pub_date_str)
@@ -606,9 +614,8 @@ class StandaloneScraper:
                     print(f"      ❌ Too old ({days_old} days): {title[:50]}")
                     continue
             except:
-                print(f"      ⚠️  Date parsing failed: {pub_date_str}")
-                # Reject articles with unparseable dates
-                self.stats['filtered_out']['too_old'] += 1
+                self.stats['filtered_out']['no_date'] += 1
+                print(f"      ❌ Date parsing failed: {pub_date_str}")
                 continue
             
             # Passed all filters!
@@ -616,7 +623,7 @@ class StandaloneScraper:
             filtered.append(article)
         
         return filtered
-        
+    
     # ==================== SAVE RESULTS ====================
     
     def save(self, filename: Optional[str] = None) -> str:
@@ -624,7 +631,7 @@ class StandaloneScraper:
         
         if filename is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"breast_cancer_articles_{timestamp}.json"
+            filename = f"scraped_articles_{timestamp}.json"
         
         filepath = Path(self.output_dir) / filename
         
@@ -639,7 +646,7 @@ class StandaloneScraper:
         return str(filepath)
     
     def _print_stats(self):
-        """Print collection statistics - ENHANCED"""
+        """Print collection statistics"""
         
         print("\n" + "=" * 70)
         print("📊 COLLECTION STATISTICS")
@@ -666,13 +673,14 @@ class StandaloneScraper:
             print(f"  {ctype}: {count}")
         
         # With dates
-        with_dates = sum(1 for a in self.articles if a.get('publication_date'))
+        with_dates = sum(1 for a in self.articles if a.get('date'))
         print(f"\nArticles with dates: {with_dates}/{len(self.articles)}")
         
-        # FIXED: Show filtering stats
+        # Filtering stats
         print("\n📉 FILTERED OUT:")
         print(f"  No breast cancer focus: {self.stats['filtered_out']['no_breast_cancer']}")
-        print(f"  Outside 7-day window: {self.stats['filtered_out']['too_old']}")
+        print(f"  Outside time window: {self.stats['filtered_out']['too_old']}")
+        print(f"  No date: {self.stats['filtered_out']['no_date']}")
         print(f"  Too short (<200 chars): {self.stats['filtered_out']['too_short']}")
         print(f"  Junk pages: {self.stats['filtered_out']['junk_page']}")
         
@@ -681,8 +689,11 @@ class StandaloneScraper:
     def cleanup(self):
         """Cleanup resources"""
         if self.driver:
-            self.driver.quit()
-            print("\n🔒 Browser closed")
+            try:
+                self.driver.quit()
+                print("\n🔒 Browser closed")
+            except:
+                pass
 
 
 # ==================== MAIN FUNCTION ====================
@@ -697,13 +708,13 @@ def main():
         epilog="""
 Examples:
   # Basic usage (7 days by default)
-  python standalone_scraper_fixed.py --urls urls.csv --keywords keywords.csv
+  python agent1_scraper.py --urls pharma_urls.csv --keywords keywords.csv
   
   # Custom lookback period
-  python standalone_scraper_fixed.py --urls urls.csv --keywords keywords.csv --days-back 14
+  python agent1_scraper.py --urls pharma_urls.csv --keywords keywords.csv --days-back 14
   
   # Custom target
-  python standalone_scraper_fixed.py --urls urls.csv --keywords keywords.csv --target 100
+  python agent1_scraper.py --urls pharma_urls.csv --keywords keywords.csv --target 100
         """
     )
     
