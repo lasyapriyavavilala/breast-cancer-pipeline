@@ -12,7 +12,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -33,12 +33,12 @@ jobs:
           TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
           
-          # Groq API for LLM
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Anthropic API for Claude (Agents 2, 3, 4)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           
         run: |
           python run_pipeline.py \
-            --target 5 \
+            --target 100 \
             --days-back 7 \
             --polls-per-article 2 \
             --grounding-threshold 0.60 \
@@ -47,13 +47,72 @@ jobs:
             --post-interval 1 \
             --no-dry-run
       
-      - name: Upload artifacts
+      - name: Upload Agent 1 Output (Scraped Articles)
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: pipeline-outputs
+          name: agent1-scraped-articles-${{ github.run_number }}
+          path: |
+            data/raw/scraped_articles_*.json
+          retention-days: 30
+      
+      - name: Upload Agent 2 Output (Enhanced Articles)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent2-enhanced-articles-${{ github.run_number }}
+          path: |
+            data/processed/enhanced_articles.json
+            data/processed/enhanced_articles.ndjson
+          retention-days: 30
+      
+      - name: Upload Agent 3 Output (Categorized Articles)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent3-categorized-articles-${{ github.run_number }}
+          path: |
+            data/processed/categorized_articles.json
+          retention-days: 30
+      
+      - name: Upload Agent 4 Output (Twitter Polls)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent4-twitter-polls-${{ github.run_number }}
+          path: |
+            data/outputs/twitter_polls.json
+          retention-days: 30
+      
+      - name: Upload Agent 5 Output (Database)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent5-post-database-${{ github.run_number }}
+          path: |
+            data/pharma_news.db
+          retention-days: 30
+      
+      - name: Upload Embeddings (Agent 3 FAISS Index)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embeddings-${{ github.run_number }}
+          path: |
+            data/embeddings/*.index
+            data/embeddings/*.pkl
+          retention-days: 30
+      
+      - name: Upload Complete Dataset (All Agents)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-pipeline-output-${{ github.run_number }}
           path: |
             data/raw/*.json
             data/processed/*.json
+            data/processed/*.ndjson
             data/outputs/*.json
+            data/embeddings/*
+            data/*.db
           retention-days: 30
