@@ -178,8 +178,14 @@ class IntegratedPipelineRunner:
         if ArticleExtractor is None:
             raise ImportError("ArticleExtractor not found. Please ensure agent2_summarizer.py is in the agents directory.")
         
+        # Auto-detect most recent scraped file if not set
         if not self.scraped_file:
-            raise ValueError("Agent 1 must run first. No scraped file found.")
+            scraped_files = list(self.raw_dir.glob("scraped_articles_*.json"))
+            if not scraped_files:
+                raise ValueError("No scraped articles found in data/raw/. Please run Agent 1 first or add your scraped file.")
+            
+            self.scraped_file = str(max(scraped_files, key=lambda p: p.stat().st_mtime))
+            logger.info(f"📂 Auto-detected most recent file: {self.scraped_file}")
         
         # Load articles
         logger.info(f"📂 Loading articles from {self.scraped_file}")
@@ -326,8 +332,19 @@ class IntegratedPipelineRunner:
             logger.info("💡 Use --post-polls flag to enable posting")
             return {"posted": 0, "skipped_threshold": 0, "skipped_rate_limit": 0, "failed": 0, "total": 0}
         
+        # Auto-detect polls file if not set
         if not self.polls_file:
-            raise ValueError("Agent 4 must run first. No polls file found.")
+            polls_files = list(self.outputs_dir.glob("twitter_polls.json"))
+            if not polls_files:
+                raise ValueError("No polls file found in data/outputs/. Please run Agent 4 first.")
+            
+            self.polls_file = str(polls_files[0])
+            logger.info(f"📂 Auto-detected polls file: {self.polls_file}")
+
+        # Load polls
+        logger.info(f"📂 Loading polls from {self.polls_file}")
+        with open(self.polls_file, 'r', encoding='utf-8') as f:
+            polls = json.load(f)
         
         logger.info(f"📤 Initializing Twitter publisher")
         logger.info(f"   🎯 Grounding threshold: {self.grounding_threshold}")
