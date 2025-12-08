@@ -275,26 +275,32 @@ class IntegratedPipelineRunner:
         if PollGenerator is None:
             raise ImportError("PollGenerator not found. Please ensure agent4_question_gen.py is in the agents directory.")
         
+        # Auto-detect categorized file if not set
         if not self.categorized_file:
-            raise ValueError("Agent 3 must run first. No categorized file found.")
+            categorized_files = list(self.processed_dir.glob("categorized_articles.json"))
+            if not categorized_files:
+                raise ValueError("No categorized articles found in data/processed/. Please run Agent 3 first.")
+            
+            self.categorized_file = str(categorized_files[0])
+            logger.info(f"📂 Auto-detected categorized file: {self.categorized_file}")
         
         # Load articles
         logger.info(f"📂 Loading articles from {self.categorized_file}")
-        with open(self.categorized_file, "r", encoding="utf-8") as f:
-            articles = json.load(f)
+        with open(self.categorized_file, "r", encoding="utf-8") as f:  # ← ADD THIS
+            articles = json.load(f)                                      # ← ADD THIS
         
-        logger.info(f"📊 Generating polls for {len(articles)} articles")
+        logger.info(f"📊 Generating polls for {len(articles)} articles")  # ← ADD THIS
         
         # Initialize poll generator with Anthropic
         generator = PollGenerator(
-            model="claude-sonnet-4-5-20250929",  # Agent 4 model
+            model="claude-sonnet-4-5-20250929",
             polls_per_article=self.polls_per_article,
             temperature=0.8,
             max_tokens=480,
-            passes=3,  # Multi-pass generation
-            similarity_threshold=0.95,  # Semantic dedup
-            grounding_threshold=0.75,  # Flag polls below this
-            entity_weight=0.30  # Entity weight in grounding
+            passes=3,
+            similarity_threshold=0.95,
+            grounding_threshold=self.grounding_threshold,  # ← Also fix this!
+            entity_weight=0.30
         )
         
         # Output path
